@@ -1,0 +1,63 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// release 签名：mobile/android/keystore.properties（storeFile/storePassword/keyAlias/keyPassword），
+// 文件不存在时退化为未签名 release。密钥丢失则无法覆盖安装，务必备份 keystore/ 目录。
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+android {
+    namespace 'com.lotus.android'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId 'com.lotus.android'
+        // 29：MediaStore 写自己的媒体条目（保存到相册）免存储权限；26-28 需要
+        // WRITE_EXTERNAL_STORAGE 运行时权限流，不值得（2026 年 29 以下占比可忽略）
+        minSdk 29
+        targetSdk 33
+        versionCode 2
+        versionName '1.1'
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.recyclerview:recyclerview:1.3.0'
+    // webkit 1.8+ 要求 compileSdk 34（本机 SDK 只到 33）；1.7.0 的 WebViewAssetLoader 完整够用
+    implementation 'androidx.webkit:webkit:1.7.0'
+    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+}

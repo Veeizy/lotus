@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lotus</string>
+    <string name="my_servers">我的服务端</string>
+    <string name="discover">局域网发现</string>
+    <string name="scan">扫描</string>
+    <string name="scanning">扫描中…</string>
+    <string name="add_server">添加服务端</string>
+    <string name="auto_connect">启动时自动连接上次服务端</string>
+    <string name="my_empty">还没有服务端。点右上角 ➕ 手动添加，或在下方扫描局域网。</string>
+    <string name="scan_empty">未发现服务端。确认手机与服务端在同一局域网、服务端已启动。</string>
+    <string name="last_used">上次使用</string>
+    <string name="online">在线</string>
+    <string name="offline">离线</string>
+    <string name="retry">重试</string>
+    <string name="back_to_servers">返回服务端列表</string>
+    <string name="connect_failed">连接失败</string>
+</resources>

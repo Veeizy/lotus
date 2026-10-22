@@ -1,0 +1,16 @@
+{
+  "name": "lotus-desktop-ui",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "esbuild src/main.ts --bundle --format=iife --target=chrome120 --outfile=../dist/app.js --minify --metafile=../dist/meta.json && node -e \"const fs=require('fs');let h=fs.readFileSync('index.html','utf8');const v=Date.now();h=h.replace('app.js','app.js?v='+v).replace('styles.css','styles.css?v='+v).replace('app.css','app.css?v='+v);fs.writeFileSync('../dist/index.html',h);fs.copyFileSync('styles.css','../dist/styles.css')\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "swiper": "^11.2.10"
+  }
+}

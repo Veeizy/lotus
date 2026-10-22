@@ -1,0 +1,23 @@
+// 阿里云镜像 + PREFER_SETTINGS：隔离机器级 init.gradle 注入的不可达私服
+// （nexus.bsdn.org），离线/内网机器也能出包（实测坑，勿改回 UNSPECIFIED）。
+pluginManagement {
+    repositories {
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = 'lotus-android'
+include ':app'

@@ -1,0 +1,22 @@
+{
+  "port": 3456,
+  "host": "127.0.0.1",
+  "paths": [
+    "D:\\照片"
+  ],
+  "api": {
+    "token": "",
+    "cors": null
+  },
+  "net": {
+    "name": "",
+    "share": true,
+    "cacheServe": true,
+    "concurrency": 5,
+    "advertise": "",
+    "port": 3457,
+    "hubs": [],
+    "known": {},
+    "cacheDir": "net-cache"
+  }
+}

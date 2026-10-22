@@ -1,0 +1,13 @@
+{
+  "name": "lotus-server-dashboard-ui",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "esbuild src/dashboard.ts --bundle --format=iife --target=chrome120 --outfile=../dist/dashboard.js --minify && node -e \"const fs=require('fs');fs.copyFileSync('index.html','../dist/index.html');fs.copyFileSync('styles.css','../dist/styles.css')\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}

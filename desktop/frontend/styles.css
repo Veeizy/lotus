@@ -1,0 +1,423 @@
+/* lotus 桌面前端样式（对应原版双面板 + 图片全屏 + 网络侧栏） */
+:root {
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --line: #e3e6ea;
+  --text: #1c2330;
+  --muted: #7a8394;
+  --accent: #2f6fed;
+  --accent-weak: #e8effd;
+  --danger: #d64545;
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+/* hidden 属性必须赢过任何 display 规则（如 .np-row 的 flex），否则 hidden 不生效 */
+[hidden] { display: none !important; }
+
+/* ---------------- 深色模式 ---------------- */
+html[data-theme="dark"] {
+  --bg: #121419;
+  --panel: #1c1f26;
+  --line: #2b303b;
+  --text: #e4e8ef;
+  --muted: #9aa3b2;
+  --accent-weak: #1e2f4d;
+}
+html[data-theme="dark"] #error-box {
+  background: #3a2226; border-color: #5c333a; color: #f0b9b9;
+}
+html[data-theme="dark"] .card:hover { border-color: var(--accent); }
+html[data-theme="dark"] #folders-section, html[data-theme="dark"] #topbar { background: transparent; }
+html[data-theme="dark"] #topbar { background: var(--panel); }
+html[data-theme="dark"] .spinner { border-color: #2a3a5c; border-top-color: var(--accent); }
+html[data-theme="dark"] .card { box-shadow: none; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font: 14px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+button {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button.mini { padding: 2px 8px; font-size: 12px; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+input[type="text"], input[type="number"] {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 9px;
+  background: var(--panel);
+  color: var(--text);
+}
+input:focus { outline: 2px solid var(--accent-weak); border-color: var(--accent); }
+code { font-family: Consolas, monospace; font-size: 12px; }
+
+/* ---------------- 顶栏 ---------------- */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+#home-btn { font-size: 16px; }
+#breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.crumb { padding: 3px 8px; border-radius: 6px; color: var(--muted); flex: none; }
+.crumb.clickable { cursor: pointer; }
+.crumb.clickable:hover { background: var(--accent-weak); color: var(--accent); }
+.crumb.active { color: var(--text); font-weight: 600; }
+#toolbar-right { display: flex; align-items: center; gap: 8px; }
+#filter-box { position: relative; }
+#filter { width: 220px; padding-right: 26px; }
+#filter-clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  border: none; background: none; padding: 2px 4px; color: var(--muted);
+}
+.sorter { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.sorter button { border: none; border-radius: 0; padding: 5px 10px; background: var(--panel); }
+.sorter button + button { border-left: 1px solid var(--line); }
+.sorter button.active { background: var(--accent-weak); color: var(--accent); font-weight: 600; }
+#net-chip.on { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
+
+/* ---------------- 主区域 ---------------- */
+#main { flex: 1; overflow: auto; position: relative; }
+#folders-section { padding: 14px 16px 80px; }
+.section-head {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--muted); font-size: 13px; margin-bottom: 10px;
+}
+.count { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; }
+
+/* ---------------- 主页根分区（本机 / 网络·其他人） ---------------- */
+#roots-view[hidden], #folder-grid[hidden], #folder-head[hidden] { display: none; }
+.roots-group { margin-bottom: 22px; }
+.roots-head { margin-bottom: 10px; }
+.roots-title { color: var(--text); font-weight: 600; }
+.roots-collapse {
+  border: none; background: none; padding: 0 4px;
+  color: var(--muted); font-size: 12px; cursor: pointer;
+}
+.roots-collapse:hover { color: var(--accent); }
+.roots-netmode { margin-left: auto; }
+.roots-netmode button { padding: 2px 8px; font-size: 12px; }
+.roots-group.collapsed > .roots-body { display: none; }
+.roots-user { margin-bottom: 14px; }
+.roots-user-head {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--muted); font-size: 12px; margin-bottom: 8px;
+}
+.roots-user-name { color: var(--text); font-weight: 600; }
+.roots-user.collapsed > .folder-grid { display: none; }
+
+#folder-grid,
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 4px;
+  transition: border-color .12s, transform .12s;
+  user-select: none;
+}
+.card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.card-icon { font-size: 26px; }
+.card-name {
+  font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-sub { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.net .card-icon { color: var(--accent); }
+.card.cached { opacity: .82; }
+/* 本机服务卡片（同机 lotus-server，归入「本机」分区）：虚线边框示「非本进程、但同机」 */
+.card.local-svc { border-style: dashed; }
+.card.local-svc .card-icon { color: var(--accent); }
+
+/* ---------------- 空状态 ---------------- */
+#empty { text-align: center; padding: 80px 20px; color: var(--muted); }
+#empty-text { font-size: 15px; margin-bottom: 14px; }
+.empty-actions { display: flex; gap: 8px; justify-content: center; }
+
+/* ---------------- 图片面板 ---------------- */
+#images-section {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  background: #14161a;
+}
+body.mode-files #images-section { display: none; }
+body.mode-images #folders-section { display: none; }
+#img-toolbar {
+  flex: none;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(20, 22, 26, .92);
+  color: #dfe3ea;
+  border-bottom: 1px solid #2a2e35;
+  position: relative; z-index: 2; /* 压在图片层之上：缩放溢出时工具栏不可被遮盖 */
+}
+#img-toolbar button {
+  background: #23262d; border-color: #33373f; color: #dfe3ea;
+  min-width: 34px;
+}
+#img-toolbar button:hover { color: #fff; border-color: var(--accent); }
+#img-hud { display: flex; align-items: center; gap: 8px; }
+#page-indicator { cursor: pointer; padding: 4px 10px; border-radius: 8px; background: #23262d; min-width: 64px; text-align: center; }
+#page-indicator:hover { color: #fff; }
+#page-input { width: 70px; text-align: center; }
+#img-toolbar .sorter { background: #23262d; border-color: #33373f; }
+#img-toolbar .sorter button { background: transparent; }
+#img-toolbar .sorter button.active { background: var(--accent); color: #fff; }
+
+.strip {
+  flex: 1;
+  min-height: 0; /* 关键：允许 flex 项收缩，否则会被原始分辨率内容撑高溢出视口 */
+  width: 100%; /* 关键：.swiper 自带 margin:auto，在纵向 flex 里会收缩成内容宽并让百分比尺寸失控 */
+  overflow: hidden; /* 关键：裁剪缩放溢出，图片再大也不能盖住工具栏/悬浮按钮 */
+  background: #14161a;
+}
+body.mode-images #main { overflow: hidden; }
+body.mode-images .swiper-slide { display: flex; align-items: center; justify-content: center; }
+body.mode-images .swiper-slide img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.cell {
+  flex: none;
+  width: 100%;
+  height: 100%;
+  scroll-snap-align: center;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  padding: 12px;
+}
+.cell img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform: scale(var(--zoom, 1));
+  transform-origin: center center;
+  transition: transform .12s;
+  user-select: none;
+  box-shadow: 0 6px 30px rgba(0,0,0,.5);
+}
+.cell .placeholder {
+  width: 70%; height: 70%;
+  background: repeating-linear-gradient(45deg, #1c1f24, #1c1f24 12px, #20232a 12px, #20232a 24px);
+  border-radius: 8px;
+}
+#img-prev, #img-next { position: relative; z-index: 2; }
+
+/* 缩放滑杆弹层（固定定位，打开时锚定在百分比按钮下方） */
+#zoom-pop {
+  position: fixed; z-index: 45;
+  width: 300px; padding: 10px 12px 8px;
+  background: #23262d; border: 1px solid #33373f; border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  color: #dfe3ea;
+}
+#zoom-pop[hidden] { display: none; }
+.zoom-pop-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 8px;
+}
+.zoom-pop-head span:first-child { font-weight: 600; }
+#zoom-pop-val { color: #6ea0ff; font-weight: 600; font-variant-numeric: tabular-nums; }
+#zoom-slider { width: 100%; margin: 0; accent-color: var(--accent); }
+.zoom-pop-marks {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 6px;
+}
+.zoom-pop-marks button {
+  background: transparent; border-color: #33373f; color: #dfe3ea;
+  padding: 1px 6px; font-size: 12px;
+}
+.zoom-pop-marks button:hover { color: #fff; border-color: var(--accent); }
+
+/* 全屏（退出 = 再点一次 ⛶；返回手势也会先退全屏，见安卓壳 onBackPressed） */
+body.fs-active #topbar, body.fs-active #fab-up, body.fs-active #fab-mode { display: none; }
+body.fs-active #images-section { position: fixed; inset: 0; z-index: 60; }
+
+/* ---------------- 漂浮按钮 ---------------- */
+#fab-up, #fab-mode {
+  position: fixed; right: 18px; z-index: 50;
+  padding: 9px 14px; border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  background: var(--panel);
+  font-weight: 600;
+}
+#fab-up { bottom: 18px; }
+#fab-mode { bottom: 60px; color: var(--accent); }
+#fab-up[hidden], #fab-mode[hidden] { display: none; }
+
+/* ---------------- 忙碌浮标 ---------------- */
+#busy {
+  position: fixed; left: 18px; bottom: 18px; z-index: 55;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 20px; padding: 7px 14px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  color: var(--muted);
+}
+.spinner {
+  width: 14px; height: 14px; flex: none;
+  border: 2px solid var(--accent-weak); border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#busy[hidden] { display: none; }
+
+/* ---------------- 错误条 ---------------- */
+#error-box {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 10px 16px 0; padding: 9px 12px;
+  background: #fdecec; border: 1px solid #f3c1c1; color: #a33;
+  border-radius: var(--radius);
+}
+#error-box button { border: none; background: none; }
+#error-box[hidden] { display: none; }
+
+/* ---------------- 网络侧栏 ---------------- */
+#net-backdrop {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(15, 18, 24, .35);
+}
+#net-backdrop[hidden] { display: none; }
+#net-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 81;
+  width: 380px; max-width: 92vw;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex; flex-direction: column;
+  box-shadow: -8px 0 30px rgba(0,0,0,.12);
+}
+#net-panel[hidden] { display: none; }
+.np-head {
+  flex: none;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; font-weight: 700; font-size: 15px;
+  border-bottom: 1px solid var(--line);
+}
+.np-body { flex: 1; overflow-y: auto; padding: 4px 14px 20px; }
+.np-section { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.np-section:last-child { border-bottom: none; }
+.np-title { font-weight: 700; margin-bottom: 8px; }
+.np-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.np-row label { color: var(--muted); min-width: 118px; }
+.np-row input[type="text"] { flex: 1; min-width: 0; }
+.np-row input[type="number"].num { width: 64px; }
+.grow { flex: 1; min-width: 0; }
+.ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.addr { color: var(--muted); font-size: 12px; }
+.name { font-weight: 600; }
+.np-hint { color: var(--muted); font-size: 12px; margin-top: 6px; white-space: pre-wrap; }
+.np-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-radius: 8px;
+}
+.np-item:hover { background: var(--bg); }
+.st { font-size: 12px; }
+.st.ok { color: #2c9e5f; }
+.st.bad { color: var(--danger); }
+
+/* 设置面板（复用网络侧栏样式） */
+#settings-backdrop {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(15, 18, 24, .35);
+}
+#settings-backdrop[hidden] { display: none; }
+#settings-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 81;
+  width: 400px; max-width: 94vw;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex; flex-direction: column;
+  box-shadow: -8px 0 30px rgba(0,0,0,.12);
+}
+#settings-panel[hidden] { display: none; }
+#settings-panel .np-row input[type="text"] { flex: 1; min-width: 0; }
+#st-cachedir { flex: 1; min-width: 0; font-size: 12px; }
+
+/* ---------------- 手机窄屏适配（Android WebView） ---------------- */
+@media (max-width: 720px) {
+  #topbar { flex-wrap: wrap; padding: 8px 10px; gap: 6px; }
+  #folders-section { padding: 10px 10px 70px; }
+  .section-head, #toolbar-right { flex-wrap: wrap; gap: 6px; }
+  #filter { width: 100%; }
+  .sorter { flex-wrap: wrap; }
+  .sorter button { padding: 5px 7px; font-size: 12px; }
+  .folder-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
+  #img-toolbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+  #img-toolbar .sorter { background: transparent; }
+  #page-indicator { min-width: 52px; }
+  #settings-panel, #net-panel { width: 100vw; max-width: 100vw; }
+  .np-row label { min-width: 96px; }
+}
+
+/* ---------------- 消费者模式（服务端 writable=false） ----------------
+ * 隐藏全部管理入口：网络面板、配置编辑；仅保留浏览与外观偏好。 */
+body.consumer #net-chip { display: none; }
+
+/* 消费者模式：slide 壳加载中/未挂载的占位 */
+body.consumer #strip .swiper-zoom-container:empty::after {
+  content: '···';
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--muted, #9aa3ad);
+  font-size: 22px;
+  letter-spacing: 4px;
+}
+body.consumer #strip .swiper-zoom-container { position: relative; width: 100%; height: 100%; }
+
+/* ---------------- 图片模式头部瘦身 ----------------
+ * 文件夹筛选/文件夹排序只对文件面板有意义；深浅色切换在图片浏览中无意义。
+ * 图片模式下隐藏，给面包屑和页码控件让出空间。 */
+body.mode-images #filter-box,
+body.mode-images #folder-sort,
+body.mode-images #theme-toggle { display: none; }
+
+/* ---------------- app 端（消费者模式）移除设置 ----------------
+ * 手机端没有可管理的配置，设置按钮与整个设置面板不渲染。 */
+body.consumer #settings-btn,
+body.consumer #settings-panel,
+body.consumer #settings-backdrop { display: none; }
+
+/* 手机端（消费者模式）：滑动即翻页，工具栏翻页按钮冗余，删除 */
+body.consumer #img-prev,
+body.consumer #img-next { display: none; }
+
+/* 长按图片的保存气泡（安卓端） */
+.save-pop {
+  position: fixed; z-index: 75;
+  background: #23262d; border: 1px solid #33373f; border-radius: 10px;
+  padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+.save-pop-btn {
+  display: block; background: transparent; border: 0; color: #dfe3ea;
+  padding: 10px 16px; font-size: 14px; white-space: nowrap; cursor: pointer;
+}
+.save-pop-btn:active { color: #fff; background: rgba(255,255,255,.08); border-radius: 7px; }

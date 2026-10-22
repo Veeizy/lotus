@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>图片浏览服务</title>
+  <script>
+    window.__errs = [];
+    window.addEventListener('error', function (e) { window.__errs.push(String(e.message || e)); });
+    window.addEventListener('unhandledrejection', function (e) { window.__errs.push('rej:' + String(e.reason && e.reason.message || e.reason) + '
+' + String(e.reason && e.reason.stack || '').slice(0, 600)); });
+    // 尽早应用主题，避免闪烁
+    try {
+      var t = localStorage.getItem('lotus-theme');
+      if (!t) t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = t;
+    } catch (e) { /* 忽略 */ }
+  </script>
+  <link rel="stylesheet" href="styles.css?v=1792235629779">
+  <link rel="stylesheet" href="app.css?v=1792235629779">
+</head>
+<body class="mode-files">
+
+  <!-- 顶栏：面包屑 + 筛选 + 网络 -->
+  <header id="topbar">
+    <button id="home-btn" title="根目录">🏠</button>
+    <nav id="breadcrumbs"></nav>
+    <div id="toolbar-right">
+      <div id="filter-box">
+        <input id="filter" type="text" placeholder="筛选文件夹（按 / 聚焦）">
+        <button id="filter-clear" hidden>✕</button>
+      </div>
+      <div id="folder-sort" class="sorter">
+        <button data-sort="name" class="active">名字</button>
+        <button data-sort="time-desc">最新</button>
+        <button data-sort="time-asc">最旧</button>
+      </div>
+      <button id="theme-toggle" title="深色/浅色">🌙 深色</button>
+      <button id="settings-btn" title="设置">⚙</button>
+      <button id="net-chip"><span id="net-chip-text">🌐 网络</span></button>
+    </div>
+  </header>
+
+  <!-- 错误提示 -->
+  <div id="error-box" hidden>
+    <span id="error-msg"></span>
+    <button onclick="this.parentElement.hidden = true">✕</button>
+  </div>
+
+  <!-- 主区域 -->
+  <main id="main">
+    <!-- 文件面板 -->
+    <section id="folders-section">
+      <div id="folder-head" class="section-head">
+        <span>文件夹</span>
+        <span id="folder-count" class="count">0</span>
+      </div>
+      <div id="folder-grid"></div>
+      <!-- 根视图分区：本机 / 网络·其他人（按用户分组或平铺，见 app.ts renderRootsView） -->
+      <div id="roots-view" hidden></div>
+    </section>
+
+    <!-- 图片面板 -->
+    <section id="images-section" hidden>
+      <div id="img-toolbar">
+        <button id="img-prev" title="上一张（←）">‹</button>
+        <div id="img-hud">
+          <span id="page-indicator" title="点击跳页">0 / 0</span>
+          <input id="page-input" type="number" min="1" hidden>
+          <span id="img-sort" class="sorter">
+            <button data-sort="name" class="active">名字</button>
+            <button data-sort="time-desc">最新</button>
+            <button data-sort="time-asc">最旧</button>
+          </span>
+          <button id="zoom-out" title="缩小（-）">－</button>
+          <button id="zoom-reset" title="调整缩放：点击弹出滑杆（0 重置）">100%</button>
+          <button id="zoom-in" title="放大（+）">＋</button>
+          <button id="fs-toggle" title="全屏">⛶</button>
+        </div>
+        <button id="img-next" title="下一张（→）">›</button>
+      </div>
+      <!-- 缩放滑杆弹层：点击工具栏上的百分比按钮弹出 -->
+      <div id="zoom-pop" hidden>
+        <div class="zoom-pop-head"><span>缩放</span><span id="zoom-pop-val">100%</span></div>
+        <input id="zoom-slider" type="range" min="0" max="1000" step="1" value="100">
+        <div class="zoom-pop-marks">
+          <button type="button" data-zoom="0.1">10%</button>
+          <button type="button" data-zoom="1">100%</button>
+          <button type="button" data-zoom="10">1000%</button>
+        </div>
+      </div>
+      <div id="strip" class="strip swiper"></div>
+    </section>
+
+    <!-- 空状态 -->
+    <div id="empty" hidden>
+      <div id="empty-text">这里什么都没有</div>
+      <div class="empty-actions">
+        <button id="empty-up">⬆ 返回上一级</button>
+        <button id="empty-clear" hidden>清除筛选</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- 漂浮按钮 -->
+  <button id="fab-up" title="返回上一级（Backspace）" hidden>⬆</button>
+  <button id="fab-mode" title="切换面板" hidden>🖼 图片</button>
+
+  <!-- 忙碌/进度浮标 -->
+  <div id="busy" hidden>
+    <span class="spinner"></span>
+    <span id="busy-text"></span>
+  </div>
+
+  <!-- 网络侧栏 -->
+  <div id="net-backdrop" hidden></div>
+  <aside id="net-panel" hidden>
+    <div class="np-head">
+      <span>🌐 网络</span>
+      <button id="np-close">✕</button>
+    </div>
+    <div class="np-body">
+      <div class="np-section">
+        <div class="np-title">本机身份</div>
+        <div class="np-row"><label>名称</label>
+          <input id="np-name" type="text" placeholder="节点名称">
+          <button id="np-name-save" class="mini">保存</button>
+        </div>
+        <div class="np-row"><label>ID</label><code id="np-id" class="grow ellip"></code><button id="np-id-copy" class="mini">复制</button></div>
+        <div class="np-row"><label>明钥</label><code id="np-pub" class="grow ellip"></code><button id="np-pub-copy" class="mini">复制</button></div>
+        <div class="np-row"><label>密钥</label><code id="np-secret" class="grow ellip"></code><button id="np-secret-copy" class="mini">复制</button></div>
+        <div class="np-hint">密钥只保存在本机，绝不外发；明钥可发给任何人。</div>
+      </div>
+
+      <div class="np-section">
+        <div class="np-title">设置</div>
+        <div class="np-row"><label>允许他人浏览我的图库</label><input id="np-share" type="checkbox"></div>
+        <div class="np-row"><label>允许他人取我的缓存</label><input id="np-cacheserve" type="checkbox"></div>
+        <div class="np-row"><label>同时下载图片数</label>
+          <input id="np-conc" type="number" min="1" max="16" class="num">
+        </div>
+        <div class="np-row"><label>自动发现局域网节点</label><input id="np-landisc" type="checkbox"></div>
+        <div class="np-row"><label>扫描端口</label>
+          <input id="np-ports" type="text" class="grow" placeholder="附加端口，逗号分隔（默认 3456 恒在）">
+        </div>
+      </div>
+
+      <div class="np-section">
+        <div class="np-title">入网</div>
+        <div class="np-row">
+          <input id="np-addr" type="text" placeholder="节点地址，如 192.168.1.5:3456（逗号分隔多个）">
+          <button id="np-join" class="mini">入网</button>
+        </div>
+        <div id="np-msg" class="np-hint"></div>
+        <div id="np-uplinks"></div>
+        <div id="np-leave-row" hidden>
+          <button id="np-leave" class="mini danger">退出网络</button>
+        </div>
+      </div>
+
+      <div class="np-section">
+        <div class="np-title">在线成员</div>
+        <div id="np-members"></div>
+        <div id="np-members-empty" class="np-hint">还没有在线成员。同一局域网的节点会出现在下方「局域网发现」，或直接输入地址入网。</div>
+      </div>
+
+      <div class="np-section">
+        <div class="np-title">局域网发现</div>
+        <div class="np-row">
+          <button id="np-lan-scan" class="mini">立即扫描并入网</button>
+          <span class="np-hint">mDNS + 端口探测（忽略本机）</span>
+        </div>
+        <div id="np-discovered"></div>
+        <div id="np-discovered-empty" class="np-hint">未发现同网段节点。</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 设置面板 -->
+  <div id="settings-backdrop" hidden></div>
+  <aside id="settings-panel" hidden>
+    <div class="np-head">
+      <span>⚙ 设置</span>
+      <button id="st-close">✕</button>
+    </div>
+    <div class="np-body">
+      <div class="np-section">
+        <div class="np-title">外观</div>
+        <div class="np-row"><label>深色背景模式</label><input id="st-dark" type="checkbox"></div>
+      </div>
+
+      <div class="np-section">
+        <div class="np-title">图库文件夹</div>
+        <div id="st-paths"></div>
+        <div class="np-row" id="st-path-row">
+          <input id="st-path-new" type="text" placeholder="输入要添加的文件夹绝对路径，如 D:\照片">
+          <button id="st-path-add" class="mini">添加</button>
+        </div>
+        <div class="np-hint" id="st-path-hint">支持添加多个文件夹；改动立即生效并写入 config.json。</div>
+        <div class="np-hint" id="st-fixed-hint" hidden>当前以只读方式连接服务端（消费者模式），图库文件夹由服务端管理，不支持在此编辑。</div>
+      </div>
+
+      <div class="np-section">
+        <div class="np-title">网络缓存文件夹</div>
+        <div class="np-row" id="st-cachedir-row">
+          <input id="st-cachedir" type="text" placeholder="缓存存放路径">
+          <button id="st-cachedir-save" class="mini">保存</button>
+        </div>
+        <div class="np-row">
+          <span class="np-hint grow ellip">当前：<span id="st-cachedir-now"></span></span>
+          <button id="st-cachedir-open" class="mini">📂 打开</button>
+        </div>
+        <div class="np-hint">访问其他节点时，以对方的根为根，把浏览过的目录和图片镜像保存在这里；这些根会永久出现在你的根目录页，节点离线也能看。</div>
+      </div>
+
+      <div class="np-section" id="st-fw" hidden>
+        <div class="np-title">Windows 防火墙</div>
+        <div id="st-fw-rows"></div>
+        <div class="np-row" id="st-fw-btnrow" hidden>
+          <button id="st-fw-allow" class="mini">允许局域网直连…</button>
+        </div>
+        <div class="np-hint" id="st-fw-hint"></div>
+      </div>
+
+      <div class="np-hint" id="st-msg"></div>
+    </div>
+  </aside>
+
+  <script src="app.js?v=1792235629779"></script>
+</body>
+</html>

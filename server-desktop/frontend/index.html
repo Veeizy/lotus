@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>lotus-server 控制台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <span class="dot" id="conn-dot"></span>
+      <span class="title">lotus-server 控制台</span>
+    </div>
+    <div class="meta">
+      <span id="meta-name">—</span>
+      <span class="muted" id="meta-id"></span>
+      <span class="muted" id="meta-uptime"></span>
+    </div>
+  </header>
+
+  <div id="offline-banner" hidden>
+    <span>服务未运行。</span>
+    <button id="btn-spawn" class="btn">启动服务进程</button>
+    <button id="btn-svc-start" class="btn">启动系统服务</button>
+    <span class="muted" id="offline-hint"></span>
+  </div>
+
+  <div id="fw-banner" hidden>
+    <span>⚠ Windows 防火墙未放行本程序，局域网设备可能无法访问服务。</span>
+    <button id="fw-allow" class="btn">一键放行…</button>
+    <button id="fw-dismiss" class="btn mini">知道了</button>
+  </div>
+
+  <nav id="tabs">
+    <button data-tab="overview" class="active">概览</button>
+    <button data-tab="access">访问记录</button>
+    <button data-tab="traffic">流量</button>
+    <button data-tab="manage">管理</button>
+  </nav>
+
+  <main>
+    <!-- 概览 -->
+    <section id="tab-overview" class="tab active">
+      <div class="cards">
+        <div class="stat"><div class="k">服务时间</div><div class="v" id="st-uptime">—</div><div class="s" id="st-started"></div></div>
+        <div class="stat"><div class="k">流量（收 / 发）</div><div class="v" id="st-traffic">—</div><div class="s" id="st-traffic-peers"></div></div>
+        <div class="stat"><div class="k">访问请求</div><div class="v" id="st-requests">—</div><div class="s" id="st-requests-hint"></div></div>
+        <div class="stat"><div class="k">网络</div><div class="v" id="st-net">—</div><div class="s" id="st-net-hint"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">共享文件夹</div>
+        <ul class="plain" id="ov-folders"></ul>
+      </div>
+      <div class="panel">
+        <div class="panel-head">请求分类</div>
+        <table id="ov-kinds"><thead><tr><th>类型</th><th>次数</th><th>成功</th><th>失败</th><th>字节</th><th>平均耗时</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <div class="panel-head">成员</div>
+        <table id="ov-members"><thead><tr><th>节点</th><th>地址</th><th>直连</th><th>本机</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- 访问记录 -->
+    <section id="tab-access" class="tab">
+      <div class="panel">
+        <div class="panel-head">最近访问（新 → 旧，5s 刷新）</div>
+        <table id="access-table">
+          <thead><tr><th>时间</th><th></th><th>类型</th><th>对端</th><th>对象</th><th>字节</th><th>耗时</th><th>备注</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 流量 -->
+    <section id="tab-traffic" class="tab">
+      <div class="panel">
+        <div class="panel-head">合计</div>
+        <div class="cards">
+          <div class="stat"><div class="k">收</div><div class="v" id="tf-in">—</div></div>
+          <div class="stat"><div class="k">发</div><div class="v" id="tf-out">—</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">按对端（五协议节点流）</div>
+        <table id="traffic-table"><thead><tr><th>对端</th><th>收</th><th>发</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <!-- 管理 -->
+    <section id="tab-manage" class="tab">
+      <div class="panel">
+        <div class="panel-head">共享文件夹（热生效）</div>
+        <ul class="plain editable" id="mg-folders"></ul>
+        <div class="row">
+          <input id="mg-folder-input" type="text" placeholder="输入绝对路径，或点「浏览…」选择">
+          <button id="mg-folder-browse" class="btn">浏览…</button>
+          <button id="mg-folder-add" class="btn">添加</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">网络</div>
+        <ul class="plain editable" id="mg-uplinks"></ul>
+        <div class="row">
+          <input id="mg-join-input" type="text" placeholder="对方地址，如 192.168.1.5:3456">
+          <button id="mg-join" class="btn">加入</button>
+          <button id="mg-leave-all" class="btn danger">退出全部网络</button>
+        </div>
+        <div class="msg" id="mg-net-msg"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">系统服务（开机自启 / 崩溃重启）</div>
+        <div class="row"><span id="mg-svc-state" class="pill">—</span>
+          <button id="mg-svc-install" class="btn">注册服务</button>
+          <button id="mg-svc-start" class="btn">启动</button>
+          <button id="mg-svc-stop" class="btn">停止</button>
+          <button id="mg-svc-uninstall" class="btn danger">移除服务</button>
+        </div>
+        <div class="msg muted" id="mg-svc-note"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Windows 防火墙（局域网可达性）</div>
+        <div class="row"><span id="mg-fw-state" class="pill">—</span>
+          <button id="mg-fw-allow" class="btn">一键放行…</button>
+        </div>
+        <ul class="plain" id="mg-fw-rows"></ul>
+        <div class="msg muted" id="mg-fw-note"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" hidden></div>
+  <script src="dashboard.js"></script>
+</body>
+</html>

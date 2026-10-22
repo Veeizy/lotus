@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>图片浏览器</title>
+<style>
+  :root {
+    --bg: #0f1216;
+    --panel: #171c22;
+    --card: #1d242c;
+    --line: #2a3340;
+    --text: #e8ecf1;
+    --muted: #8b98a5;
+    --accent: #4f9cf9;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 14px;
+    display: flex; flex-direction: column;
+    overflow: hidden; /* 页面本身永不滚动：文件模式由 main 内部滚动，图片模式全屏 */
+  }
+
+  /* ---------- 顶栏：只有面包屑 ---------- */
+  header {
+    flex: 0 0 auto;
+    display: flex; align-items: center;
+    padding: 6px 16px;
+    background: rgba(15, 18, 22, .88);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  #breadcrumb { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; min-height: 30px; flex: 1; }
+  .crumb {
+    padding: 5px 10px; border: none; border-radius: 8px; background: transparent;
+    color: var(--muted); cursor: pointer; font: inherit; max-width: 280px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .crumb:hover { background: var(--card); color: var(--text); }
+  .crumb.active { color: var(--text); background: var(--card); font-weight: 600; }
+  .crumb-sep { color: var(--muted); opacity: .45; user-select: none; }
+
+  /* ---------- 主区 ---------- */
+  main { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 20px 30px; }
+  body.mode-images main { overflow: hidden; display: flex; flex-direction: column; padding: 8px 14px 14px; }
+  section h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 6px 0 10px; letter-spacing: .5px; }
+
+  /* ---------- 文件面板 ---------- */
+  .panel-toolbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 6px 0 10px; background: var(--bg);
+  }
+  .filter-box { position: relative; display: flex; align-items: center; flex: 1 1 260px; max-width: 380px; }
+  .filter-box .filter-icon { position: absolute; left: 10px; font-size: 13px; opacity: .7; pointer-events: none; }
+  #filter {
+    width: 100%; padding: 7px 30px 7px 30px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--text); font: inherit; outline: none;
+  }
+  #filter:focus { border-color: var(--accent); }
+  #filter::placeholder { color: var(--muted); }
+  #filter-clear {
+    position: absolute; right: 5px; border: none; background: transparent;
+    color: var(--muted); cursor: pointer; font-size: 12px; padding: 3px 7px; border-radius: 6px;
+  }
+  #filter-clear:hover { color: var(--text); background: var(--line); }
+  .sort-group { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card); }
+  .sort-group button {
+    padding: 6px 14px; border: none; background: transparent;
+    color: var(--muted); cursor: pointer; font: inherit; white-space: nowrap;
+  }
+  .sort-group button + button { border-left: 1px solid var(--line); }
+  .sort-group button.active { background: var(--accent); color: #fff; }
+  .sort-group button:not(.active):hover { color: var(--text); }
+
+  .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    cursor: pointer; color: var(--text); text-align: left; font: inherit;
+    transition: border-color .15s, transform .15s;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card .icon { font-size: 24px; line-height: 1; }
+  .card .meta { min-width: 0; flex: 1; }
+  .card .name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .time { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
+  .card .sub {
+    display: block; color: var(--muted); font-size: 11px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* ---------- 图片面板（占满剩余屏幕，不产生页面滚动） ---------- */
+  #images-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #images-section[hidden] { display: none; }
+  .strip-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .strip-head h2 { margin: 0; }
+  .pos-indicator {
+    padding: 3px 10px; border-radius: 999px; background: var(--card);
+    border: 1px solid var(--line); font-variant-numeric: tabular-nums; color: var(--text);
+  }
+  /* 跳页：点击页码指示器 → 变成页码输入框，回车跳转 */
+  .pos-jump { display: inline-flex; align-items: center; }
+  #img-pos { cursor: pointer; }
+  #img-pos:hover { border-color: var(--accent); }
+  #jump-input {
+    width: 88px; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--accent); background: var(--card);
+    color: var(--text); font: inherit; outline: none; text-align: center;
+  }
+  #jump-input[hidden] { display: none; }
+  .head-btns { margin-left: auto; display: flex; gap: 8px; }
+  .head-btns button {
+    padding: 5px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--text); cursor: pointer; font: inherit;
+  }
+  .head-btns button:hover { border-color: var(--accent); }
+
+  .strip-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
+  .strip {
+    flex: 1; min-width: 0;
+    overflow-x: auto; overflow-y: hidden;
+    padding: 10px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px;
+    touch-action: none; /* 触摸手势由脚本接管 */
+    scrollbar-width: thin; scrollbar-color: #39424e transparent;
+  }
+  /* 缩放层：双指捏合 / Ctrl+滚轮 作用于这一层，横向滚动仍由 .strip 承担 */
+  #zoomer {
+    display: flex; gap: 10px; height: 100%; width: max-content;
+    transform-origin: 50% 50%; will-change: transform;
+  }
+  .strip-wrap:fullscreen .strip { height: calc(100vh - 20px); }
+  .strip::-webkit-scrollbar { height: 10px; }
+  .strip::-webkit-scrollbar-thumb { background: #39424e; border-radius: 5px; }
+  .strip::-webkit-scrollbar-track { background: transparent; }
+  /* 容器尺寸由脚本统一固定为"一页"大小（可视区宽×高），与图片加载状态无关；
+     图片等比 contain 居中其中，未加载时 img 收缩为 0×0，只显示整页黑底占位 */
+  .shot {
+    position: relative; flex: 0 0 auto; height: 100%; margin: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; overflow: hidden; background: #000;
+    cursor: zoom-in;
+  }
+  .shot img {
+    width: 0; height: 0;
+    display: block; border-radius: 6px;
+    user-select: none; -webkit-user-drag: none;
+  }
+  .shot figcaption {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 22px 10px 6px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, .78));
+    font-size: 12px; color: #fff;
+    opacity: 0; transition: opacity .15s; pointer-events: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .shot:hover figcaption { opacity: 1; }
+
+  /* 图片面板漂浮排序器：右上角半透明，悬停/聚焦变清晰 */
+  .img-sort {
+    position: absolute; top: 16px; right: 24px; z-index: 6;
+    display: flex; border-radius: 999px; overflow: hidden;
+    border: 1px solid var(--line);
+    background: rgba(15, 18, 22, .38);
+    backdrop-filter: blur(6px);
+    opacity: .45; transition: opacity .15s;
+  }
+  .img-sort:hover, .img-sort:focus-within, .img-sort:active { opacity: 1; }
+  .img-sort button {
+    padding: 5px 13px; border: none; background: transparent;
+    color: var(--text); font-size: 12px; cursor: pointer;
+  }
+  .img-sort button + button { border-left: 1px solid rgba(42, 51, 64, .8); }
+  .img-sort button.active { background: rgba(79, 156, 249, .85); color: #fff; }
+  .img-sort button:not(.active):hover { color: var(--accent); }
+
+  .edge {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+    width: 40px; height: 68px; border-radius: 10px;
+    border: 1px solid var(--line); background: rgba(23, 28, 34, .88);
+    color: var(--text); font-size: 20px; cursor: pointer;
+    opacity: 0; transition: opacity .15s;
+  }
+  .strip-wrap:hover .edge, .edge:focus-visible { opacity: 1; }
+  .edge.left { left: 8px; }
+  .edge.right { right: 8px; }
+  .edge:hover { border-color: var(--accent); }
+
+  /* 全屏时的退出按钮（左上角半透明，与右上角的排序器对称） */
+  .exit-fs {
+    position: absolute; top: 16px; left: 24px; z-index: 7;
+    display: none; align-items: center;
+    padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(15, 18, 22, .38); backdrop-filter: blur(6px);
+    color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
+    opacity: .45; transition: opacity .15s;
+  }
+  .strip-wrap:fullscreen .exit-fs, .strip-wrap.pseudo-fs .exit-fs { display: flex; }
+  .exit-fs:hover, .exit-fs:active { opacity: 1; }
+
+  /* 缩放比例恢复按钮（右下角半透明，仅缩放≠100% 时出现） */
+  .zoom-reset {
+    position: absolute; right: 24px; bottom: 22px; z-index: 7;
+    display: none; align-items: center;
+    padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(15, 18, 22, .38); backdrop-filter: blur(6px);
+    color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
+    opacity: .55; transition: opacity .15s;
+  }
+  .zoom-reset:not([hidden]) { display: flex; }
+  .zoom-reset:hover, .zoom-reset:active { opacity: 1; }
+
+  /* 伪全屏：浏览器不支持网页全屏 API（如 iPhone Safari）时的兜底 */
+  .strip-wrap.pseudo-fs {
+    position: fixed; inset: 0; z-index: 90;
+    border-radius: 0; background: var(--bg);
+  }
+
+  /* ---------- 加载浮标 / 状态 ---------- */
+  #busy {
+    position: fixed; left: 18px; bottom: 18px; z-index: 50;
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 18px; border-radius: 999px;
+    background: rgba(23, 28, 34, .94); border: 1px solid var(--line);
+    color: var(--text); font-size: 13px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+    pointer-events: none;
+  }
+  #busy[hidden] { display: none; }
+  .busy-dot {
+    width: 11px; height: 11px; flex: 0 0 auto;
+    border: 2px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #empty, #error-box { text-align: center; color: var(--muted); padding: 60px 0; }
+  #error-box .msg { color: #ff8a80; margin-bottom: 14px; word-break: break-all; }
+  #error-box button, #empty button {
+    padding: 8px 18px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--text); cursor: pointer; font: inherit;
+    margin: 0 4px;
+  }
+  #error-box button:hover, #empty button:hover { border-color: var(--accent); }
+
+  /* ---------- 漂浮按钮 ---------- */
+  #fabs {
+    position: fixed; right: 18px; bottom: 18px; z-index: 60;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  }
+  #fabs button {
+    min-width: 52px; height: 44px; padding: 0 16px; border-radius: 999px;
+    border: 1px solid var(--line); background: rgba(23, 28, 34, .92);
+    color: var(--text); cursor: pointer; font: inherit;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+  }
+  #fabs button:hover { border-color: var(--accent); }
+  #fabs button[hidden] { display: none; }
+
+  /* ---------- 大图预览 ---------- */
+  #lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(8, 10, 13, .95); display: flex; flex-direction: column; }
+  #lightbox[hidden] { display: none; }
+  .lb-top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+  .lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-index { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .lb-btn {
+    padding: 6px 14px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--text); cursor: pointer; font: inherit;
+  }
+  .lb-btn:hover { border-color: var(--accent); }
+  .lb-stage { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 0 64px; }
+  #lb-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+  .lb-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 48px; height: 80px; font-size: 24px;
+  }
+  .lb-nav.prev { left: 8px; }
+  .lb-nav.next { right: 8px; }
+
+  /* ---------- 入网互联：顶栏状态胶囊 + 设置面板 ---------- */
+  header { gap: 10px; }
+  #net-chip {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 14px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--card);
+    color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+    white-space: nowrap;
+  }
+  #net-chip:hover { border-color: var(--accent); color: var(--text); }
+  #net-chip.on { color: var(--text); border-color: var(--accent); }
+  #net-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  #net-chip.on .dot { background: #34d399; }
+
+  #net-panel { position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center; }
+  #net-panel[hidden] { display: none; }
+  .np-backdrop { position: absolute; inset: 0; background: rgba(8, 10, 13, .6); }
+  .np-card {
+    position: relative; z-index: 1;
+    width: min(680px, calc(100vw - 32px));
+    max-height: min(86vh, 720px);
+    display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .55);
+  }
+  .np-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .np-head h2 { margin: 0; font-size: 15px; }
+  .np-body { overflow-y: auto; padding: 4px 18px 18px; }
+  .np-body section { border-top: 1px solid var(--line); padding: 14px 0; }
+  .np-body section:first-child { border-top: none; }
+  .np-body h3 { margin: 0 0 10px; font-size: 12px; color: var(--muted); letter-spacing: .5px; }
+  .np-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+  .np-row label { color: var(--muted); font-size: 12px; min-width: 64px; }
+  .np-row input[type=text], .np-row input[type=password] {
+    flex: 1; min-width: 200px; padding: 6px 10px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--text); font: inherit; font-size: 12px; outline: none;
+    font-family: Consolas, monospace;
+  }
+  .np-row input:focus { border-color: var(--accent); }
+  .np-row .mini {
+    padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .np-row .mini:hover { border-color: var(--accent); }
+  .np-btn {
+    padding: 8px 18px; border-radius: 9px; border: none; cursor: pointer;
+    background: var(--accent); color: #fff; font: inherit;
+  }
+  .np-btn:hover { filter: brightness(1.1); }
+  .np-btn.ghost { background: var(--card); border: 1px solid var(--line); color: var(--text); }
+  .np-hint { color: var(--muted); font-size: 11px; line-height: 1.7; margin: 6px 0 0; word-break: break-all; }
+  .np-list { display: flex; flex-direction: column; gap: 6px; }
+  .np-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+    background: var(--card); font-size: 12px;
+  }
+  .np-item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .np-item .st { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .np-item .st.ok { color: #34d399; }
+  .np-item .st.bad { color: #ff8a80; }
+  .np-item .name { font-weight: 600; }
+  .np-item .addr { color: var(--muted); }
+  #np-msg { color: var(--muted); font-size: 12px; margin: 8px 0 0; line-height: 1.7; white-space: pre-line; }
+
+</style>
+</head>
+<body class="mode-files">
+
+<header>
+  <nav id="breadcrumb" aria-label="路径导航"></nav>
+  <button id="net-chip" title="入网互联：输入对方地址加入网络，互相浏览图库"><span class="dot"></span><span id="net-chip-text">🌐 网络</span></button>
+</header>
+
+<main>
+  <section id="folders-section" hidden>
+    <div class="panel-toolbar">
+      <div class="filter-box">
+        <span class="filter-icon">🔍</span>
+        <input id="filter" type="text" placeholder="模糊筛选名称…" title="按名称模糊筛选文件夹（字符按顺序匹配即可，不必连续；按 / 聚焦）" autocomplete="off">
+        <button id="filter-clear" title="清除筛选" hidden>✕</button>
+      </div>
+      <div class="sort-group" id="folder-sort" role="group" aria-label="文件夹排序">
+        <button data-sort="name" class="active" title="按名称自然排序（数字按数值，中文按拼音）">名字</button>
+        <button data-sort="time-desc" title="按修改时间从新到旧">最新</button>
+        <button data-sort="time-asc" title="按修改时间从旧到新">最旧</button>
+      </div>
+    </div>
+    <h2>📁 文件夹 · <span id="folder-count">0</span></h2>
+    <div id="folder-grid" class="folder-grid"></div>
+  </section>
+
+  <section id="images-section" hidden>
+    <div class="strip-head">
+      <h2>🖼 本层图片</h2>
+      <span id="img-count" class="pos-indicator">0 张</span>
+      <span class="pos-jump">
+        <span id="img-pos" class="pos-indicator" aria-live="polite" title="点击输入页码，回车跳转" role="button" tabindex="0"></span>
+        <input id="jump-input" type="text" inputmode="numeric" placeholder="页码" title="输入页码，回车跳转（Esc 取消）" hidden autocomplete="off">
+      </span>
+      <div class="head-btns">
+        <button id="fs-btn" title="全屏查看本层图片">⛶ 全屏</button>
+      </div>
+    </div>
+    <div class="strip-wrap" id="strip-wrap">
+      <button class="exit-fs" id="exit-fs" title="退出全屏 (Esc)">⤢ 退出全屏</button>
+      <button class="edge left" id="edge-left" aria-label="上一张" title="上一张">‹</button>
+      <div class="strip" id="strip"><div id="zoomer"></div></div>
+      <button class="edge right" id="edge-right" aria-label="下一张" title="下一张">›</button>
+      <button class="zoom-reset" id="zoom-reset" title="恢复原始比例（100%）" hidden>⟲ 100%</button>
+      <div class="img-sort" id="img-sort" role="group" aria-label="图片排序">
+        <button data-sort="name" class="active" title="按名称自然排序（数字按数值，中文按拼音）">名字</button>
+        <button data-sort="time-desc" title="按修改时间从新到旧">最新</button>
+        <button data-sort="time-asc" title="按修改时间从旧到新">最旧</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="empty" hidden>
+    <span id="empty-text">这里没有子文件夹，也没有图片</span>
+    <div style="margin-top:14px">
+      <button id="empty-up">返回上一级</button>
+      <button id="empty-clear">清除筛选</button>
+    </div>
+  </div>
+
+  <div id="error-box" hidden>
+    <div class="msg" id="error-msg"></div>
+    <button id="error-home">返回根目录</button>
+  </div>
+</main>
+
+<div id="busy" hidden role="status"><span class="busy-dot"></span><span id="busy-text">加载中…</span></div>
+
+<div id="fabs">
+  <button id="fab-up" title="返回上一级 (Backspace)" hidden>⬆</button>
+  <button id="fab-mode" title="切换文件/图片面板" hidden>🖼 图片</button>
+</div>
+
+<div id="lightbox" hidden>
+  <div class="lb-top">
+    <span class="lb-name" id="lb-name"></span>
+    <span class="lb-index" id="lb-index"></span>
+    <button class="lb-btn" id="lb-close" aria-label="关闭 (Esc)">✕ 关闭</button>
+  </div>
+  <div class="lb-stage">
+    <button class="lb-btn lb-nav prev" id="lb-prev" aria-label="上一张 (←)">‹</button>
+    <img id="lb-img" alt="">
+    <button class="lb-btn lb-nav next" id="lb-next" aria-label="下一张 (→)">›</button>
+  </div>
+</div>
+
+<div id="net-panel" hidden>
+  <div class="np-backdrop" id="np-backdrop"></div>
+  <div class="np-card" role="dialog" aria-label="入网互联设置">
+    <div class="np-head">
+      <h2>🌐 入网互联</h2>
+      <button class="np-btn ghost" id="np-close">✕ 关闭</button>
+    </div>
+    <div class="np-body">
+      <section>
+        <h3>我的身份</h3>
+        <div class="np-row"><label>节点名称</label><input type="text" id="np-name" placeholder="给节点起个名字（对方能看到）"><button class="mini" id="np-name-save">保存</button></div>
+        <div class="np-row"><label>节点 ID</label><input type="text" id="np-id" readonly><button class="mini" id="np-id-copy">复制</button></div>
+        <div class="np-row"><label>明钥（公钥）</label><input type="text" id="np-pub" readonly title="可以放心发给任何人；对方用它加密发给你的图片"><button class="mini" id="np-pub-copy">复制</button></div>
+        <div class="np-row"><label>密钥（私钥）</label><input type="password" id="np-secret" readonly title="只有它能把别人加密发来的图片解密，请勿外传"><button class="mini" id="np-secret-eye">显示</button><button class="mini" id="np-secret-copy">复制</button></div>
+        <p class="np-hint">密钥是入网时随机生成的 16 位字符串，只保存在本机（net-state.json）。明钥可以随便发；密钥泄露意味着别人可能解密你收到过的图片，请像密码一样保管。节点 ID 由明钥推导，全网唯一、无法冒名。</p>
+      </section>
+      <section>
+        <h3>入网（输入一个或多个已有节点的地址）</h3>
+        <div class="np-row"><input type="text" id="np-addr" placeholder="例如 192.168.1.5:3456，多个用逗号或空格分隔" autocomplete="off"><button class="np-btn" id="np-join">入网</button></div>
+        <p class="np-hint">对方的地址可以是公网 IP 或同一内网的 IP。入网后：你能浏览网络里所有在线节点的图库，他们也能浏览你的（可在下方关闭）。关闭本服务即自动离线。</p>
+        <div class="np-list" id="np-uplinks"></div>
+        <div class="np-row" id="np-leave-row" hidden><button class="np-btn ghost" id="np-leave">退出网络</button></div>
+        <div id="np-msg"></div>
+      </section>
+      <section>
+        <h3>局域网自动发现</h3>
+        <div class="np-list" id="np-discovered"></div>
+        <p class="np-hint" id="np-discovered-empty" hidden>没有发现同网段的其他节点。对方启动本服务后会自动出现在这里（基于 UDP 多播，同一网段内有效）。</p>
+      </section>
+      <section>
+        <h3>设置</h3>
+        <div class="np-row"><label><input type="checkbox" id="np-share" style="vertical-align:-2px"> 允许他人浏览我的图库</label></div>
+        <div class="np-row"><label><input type="checkbox" id="np-cacheserve" style="vertical-align:-2px"> 允许他人从我的缓存获取文件</label>
+          <span style="color:var(--muted);font-size:11px">（链路缓存：别人经过我访问时，命中我缓存过的文件就直接从我这里拿，不再绕到文件主人）</span></div>
+        <div class="np-row"><label>同时下载</label><input type="number" id="np-conc" min="1" max="16" step="1" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:inherit"> 张图片（打开远程文件夹时的并发数）</div>
+      </section>
+      <section>
+        <h3>在线节点</h3>
+        <div class="np-list" id="np-members"></div>
+        <p class="np-hint" id="np-members-empty" hidden>暂无其他节点。让对方在面板里输入你的地址（<span id="np-my-addr"></span>）即可互相入网。</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+// 与服务端一致：中文按拼音、数字按数值，xxx-2 排在 xxx-11 前面
+const collate = (a, b) => a.localeCompare(b, 'zh', { numeric: true, sensitivity: 'base' });
+
+const strip = $('strip');
+const stripWrap = $('strip-wrap');
+const zoomer = $('zoomer');
+
+let current = null;          // 当前层数据（服务端返回的完整列表）
+let mode = 'files';          // 当前面板 'files' | 'images'
+let folderSort = 'name';     // 文件面板独立排序
+let imageSort = 'name';      // 图片面板独立排序
+let filterText = '';         // 筛选关键词（仅文件面板）
+let folderView = [];         // 文件面板展示数据（模糊筛选 + folderSort 后）
+let imageView = [];          // 图片面板展示数据（imageSort 后，不筛选）
+let stripObserver = null;
+let lbIndex = 0;
+let filterTimer = 0;
+let timesGen = 0;
+
+/* ---------------- 加载浮标 ---------------- */
+
+const busy = { browse: false, times: false, net: false, netText: '' };
+function setBusy(kind, on, text) {
+  busy[kind] = on;
+  if (kind === 'net') busy.netText = text || '';
+  $('busy').hidden = !(busy.browse || busy.times || busy.net);
+  $('busy-text').textContent = busy.browse ? '加载中…' : (busy.net ? busy.netText : '正在后台读取时间…');
+}
+
+function hideAllPanels() {
+  for (const id of ['folders-section', 'images-section', 'empty', 'error-box']) $(id).hidden = true;
+}
+
+/* ---------------- 模糊匹配 ---------------- */
+
+// 子序列模糊匹配：关键词的每个字符（跳过空格、忽略大小写）按顺序出现在名称里即可，
+// 不要求连续 —— 输入 abc 可以命中 "a1b2c3"、"Ab-xC"
+function fuzzyMatch(name, q) {
+  let i = 0;
+  for (const ch of name) {
+    if (ch === q[i]) i++;
+    if (i === q.length) return true;
+  }
+  return i === q.length;
+}
+
+/* ---------------- 数据加载 ---------------- */
+
+async function api(url) {
+  const r = await fetch(url);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+
+const imageUrl = (p) => (current && current.remote)
+  ? '/api/net/image?node=' + encodeURIComponent(current.remote.node) + '&p=' + encodeURIComponent(p)
+  : '/api/image?p=' + encodeURIComponent(p);
+const currentPath = () => (current && !current.isRoots) ? current.path : null;
+
+function buildUrl(path) {
+  const p = new URLSearchParams();
+  if (current && current.remote) {
+    p.set('node', current.remote.node);
+    if (path) p.set('dir', path);
+  } else if (path) {
+    p.set('dir', path);
+  }
+  if (filterText.trim()) p.set('q', filterText.trim());
+  if (folderSort !== 'name') p.set('fsort', folderSort);
+  if (imageSort !== 'name') p.set('isort', imageSort);
+  if (path && current && !current.isRoots) p.set('view', mode);
+  const qs = p.toString();
+  return location.pathname + (qs ? '?' + qs : '');
+}
+
+// 进入层级时自动选择面板：有图片默认图片模式
+function autoMode(data) {
+  if (!data || data.isRoots) return 'files';
+  return data.images.length ? 'images' : 'files';
+}
+
+async function load(path, push = true, urlView = null) {
+  setBusy('browse', true);
+  leaveRemoteFolder();
+  if (!current) hideAllPanels();
+  try {
+    if (path) {
+      const data = await api('/api/browse?path=' + encodeURIComponent(path));
+      current = { isRoots: false, ...data };
+      document.title = data.name + ' - 图片浏览器';
+      // 面包屑：最后一项为当前位置，其余可点击跳转
+      const crumbs = [{ name: '🏠 根目录', onClick: () => load(null) }];
+      data.breadcrumbs.forEach((c, i) => {
+        if (i === data.breadcrumbs.length - 1) crumbs.push({ name: c.name, active: true, title: c.path });
+        else crumbs.push({ name: c.name, onClick: () => load(c.path), title: c.path });
+      });
+      renderBreadcrumb(crumbs);
+    } else {
+      const data = await api('/api/roots');
+      if (!netState) await refreshNetState().catch(() => {});
+      current = {
+        isRoots: true,
+        localRoots: data.roots.map((r) => ({ name: r.name, path: r.path, mtime: r.mtime, sub: r.path })),
+        folders: [],
+        images: [],
+      };
+      rootsViewSig = ''; // 导航后强制重渲染一次根视图
+      rebuildRootsView();
+      document.title = '图片浏览器';
+      renderBreadcrumb([{ name: '🏠 已配置的路径', active: true }]);
+    }
+    // 面板选择：URL 指定的有效面板优先，否则按内容自动
+    let m = autoMode(current);
+    if (urlView === 'images' && current.images.length) m = 'images';
+    else if (urlView === 'files') m = 'files';
+    setMode(m, { updateUrl: false, render: false });
+    if (push) history.pushState({ path }, '', buildUrl(path));
+    $('error-box').hidden = true;
+    applyFolderView();
+    applyImageView();
+    refreshLayout();
+    if (!current.isRoots) loadTimes(path); // 后台补修改时间，不阻塞展示
+  } catch (e) {
+    current = null;
+    hideAllPanels();
+    $('error-msg').textContent = '加载失败：' + e.message;
+    $('error-box').hidden = false;
+    refreshLayout();
+  } finally {
+    setBusy('browse', false);
+  }
+}
+
+// 后台拉取本层所有条目的修改时间；到位后仅重排使用时间排序的面板
+async function loadTimes(dir) {
+  const gen = ++timesGen;
+  const node = (current && current.remote) ? current.remote.node : null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 45000);
+  setBusy('times', true);
+  try {
+    const base = node
+      ? '/api/net/times?node=' + encodeURIComponent(node) + '&path='
+      : '/api/times?path=';
+    const r = await fetch(base + encodeURIComponent(dir), { signal: ctrl.signal });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    const nodeNow = (current && current.remote) ? current.remote.node : null;
+    if (gen !== timesGen || !current || current.isRoots || current.path !== dir || nodeNow !== node) return;
+    const map = new Map(data.times.map((t) => [t.name, t.mtime]));
+    for (const it of current.folders) it.mtime = map.get(it.name) ?? 0;
+    for (const it of current.images) it.mtime = map.get(it.name) ?? 0;
+    if (folderSort !== 'name') applyFolderView(); // 名字排序无可见变化，不重绘
+    if (imageSort !== 'name') applyImageView();   // 避免重置图片面板滚动位置
+  } catch { /* 后台任务失败不影响浏览 */ }
+  finally {
+    clearTimeout(timer);
+    if (gen === timesGen) setBusy('times', false);
+  }
+}
+
+/* ---------------- 入网互联：远程图库浏览（与本地同一套 UI） ---------------- */
+
+let remoteActive = null;   // 正在预取的远程文件夹 {node, folder}
+let progressTimer = 0;
+let netState = null;       // /api/net/state 的最新结果
+
+// 根目录视图 = 本地根路径卡片 + 在线节点卡片 + 离线缓存节点卡片（无变化时不重渲染）
+let rootsViewSig = '';
+function rebuildRootsView() {
+  if (!current || !current.isRoots) return;
+  const locals = current.localRoots || [];
+  const members = (netState && netState.members) || [];
+  const cachedNodes = (netState && netState.cached) || [];
+  const sig = JSON.stringify(locals.map((r) => r.path)) + '|' +
+    JSON.stringify(members.map((m) => [m.id, m.name, m.addr])) + '|' +
+    JSON.stringify(cachedNodes.map((c) => [c.id, c.name, c.files]));
+  current.folders = locals.concat(
+    members.map((m) => ({
+      name: m.name || ('节点 ' + m.id.slice(0, 8)),
+      path: 'net:' + m.id,
+      sub: m.addr || m.id,
+      netMember: m,
+    })),
+    cachedNodes.map((c) => ({
+      name: (c.name || ('节点 ' + c.id.slice(0, 8))) + '（离线）',
+      path: 'net:' + c.id,
+      sub: '📴 离线缓存 · ' + c.files + ' 张可看',
+      netMember: { id: c.id, name: c.name },
+      offlineNode: true,
+    })),
+  );
+  if (sig !== rootsViewSig) {
+    rootsViewSig = sig;
+    applyFolderView();
+  }
+}
+
+async function loadRemote(node, rpath, push = true, urlView = null) {
+  setBusy('browse', true);
+  leaveRemoteFolder();
+  if (!current) hideAllPanels();
+  try {
+    const data = await api('/api/net/browse?node=' + encodeURIComponent(node) +
+      (rpath ? '&path=' + encodeURIComponent(rpath) : ''));
+    // 节点显示名：优先成员表，其次沿用已记住的名字，最后退回 ID 前缀
+    const member = netState && (netState.members || []).find((m) => m.id === node);
+    const nodeName = (member && member.name) ||
+      (current && current.remote && current.remote.node === node && current.remote.name) ||
+      ('节点 ' + node.slice(0, 8));
+    current = { isRoots: false, remote: { node, name: nodeName }, ...data };
+    document.title = data.name + (data.offline ? ' 📴 离线缓存' : ' 🌐 ' + nodeName);
+    // 面包屑：🏠 → 🌐 节点名 → 对方的各级路径
+    const crumbs = [{ name: '🏠 根目录', onClick: () => load(null) }];
+    const isRoot = !rpath;
+    crumbs.push(isRoot
+      ? { name: '🌐 ' + nodeName, active: true, title: node }
+      : { name: '🌐 ' + nodeName, onClick: () => loadRemote(node, ''), title: node });
+    data.breadcrumbs.forEach((c, i) => {
+      const last = i === data.breadcrumbs.length - 1;
+      crumbs.push(last ? { name: c.name, active: true, title: c.path } : { name: c.name, onClick: () => loadRemote(node, c.path), title: c.path });
+    });
+    renderBreadcrumb(crumbs);
+
+    let m = autoMode(current);
+    if (urlView === 'images' && current.images.length) m = 'images';
+    else if (urlView === 'files') m = 'files';
+    setMode(m, { updateUrl: false, render: false });
+    if (push) history.pushState({ path: rpath, node }, '', buildUrl(rpath));
+    $('error-box').hidden = true;
+    applyFolderView();
+    applyImageView();
+    refreshLayout();
+    if (rpath) loadTimes(rpath); // 远程根只有文件夹列表，无需时间
+    enterRemoteFolder(node, data.path || rpath, current.images);
+  } catch (e) {
+    current = null;
+    hideAllPanels();
+    $('error-msg').textContent = '访问远程图库失败：' + e.message;
+    $('error-box').hidden = false;
+    refreshLayout();
+  } finally {
+    setBusy('browse', false);
+  }
+}
+
+// 打开远程文件夹：批量预取该层全部图片（服务端限并发），完成后自动解密入缓存
+function enterRemoteFolder(node, folder, images) {
+  leaveRemoteFolder();
+  if (!images || !images.length) return;
+  remoteActive = { node, folder };
+  fetch('/api/net/prefetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node, folder, paths: images.map((i) => i.path) }),
+  }).then(() => pollProgress()).catch(() => {});
+}
+
+// 离开文件夹：终止排队中的传输（已传输的部分保留为缓存）
+function leaveRemoteFolder() {
+  if (!remoteActive) return;
+  const r = remoteActive;
+  remoteActive = null;
+  clearTimeout(progressTimer);
+  setBusy('net', false);
+  fetch('/api/net/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node: r.node, folder: r.folder }),
+  }).catch(() => {});
+}
+
+function pollProgress() {
+  clearTimeout(progressTimer);
+  if (!remoteActive) return;
+  const { node, folder } = remoteActive;
+  fetch('/api/net/progress?node=' + encodeURIComponent(node) + '&folder=' + encodeURIComponent(folder))
+    .then((r) => r.json())
+    .then((st) => {
+      if (!remoteActive || remoteActive.node !== node || remoteActive.folder !== folder) return;
+      const done = (st.done || 0) + (st.failed || 0);
+      const remain = (st.total || 0) - done;
+      if (st.total && remain > 0) {
+        setBusy('net', true, '🌐 正在同步远程图片 ' + done + '/' + st.total + (st.failed ? '（失败 ' + st.failed + '）' : ''));
+        progressTimer = setTimeout(pollProgress, 1000);
+      } else {
+        setBusy('net', false);
+      }
+    })
+    .catch(() => { progressTimer = setTimeout(pollProgress, 2000); });
+}
+
+/* ---------------- 排序 / 筛选 / 面板 ---------------- */
+
+function sortCompare(m) {
+  if (m === 'time-desc') return (a, b) => ((b.mtime || 0) - (a.mtime || 0)) || collate(a.name, b.name);
+  if (m === 'time-asc') return (a, b) => ((a.mtime || 0) - (b.mtime || 0)) || collate(a.name, b.name);
+  return (a, b) => collate(a.name, b.name);
+}
+
+function applyFolderView() {
+  if (!current) { folderView = []; return; }
+  const q = filterText.trim().toLowerCase().replace(/\s+/g, '');
+  folderView = (q ? current.folders.filter((it) => fuzzyMatch(it.name.toLowerCase(), q)) : current.folders.slice())
+    .sort(sortCompare(folderSort));
+  renderFolderGrid(folderView, current.isRoots ? '🗂' : '📁');
+  $('folder-count').textContent = q
+    ? folderView.length + '/' + current.folders.length
+    : String(current.folders.length);
+}
+
+function applyImageView() {
+  if (!current) { imageView = []; return; }
+  imageView = current.images.slice().sort(sortCompare(imageSort));
+  renderStrip(imageView);
+}
+
+function syncSortButtons() {
+  document.querySelectorAll('#folder-sort button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.sort === folderSort);
+  });
+  document.querySelectorAll('#img-sort button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.sort === imageSort);
+  });
+}
+
+function setMode(m, { updateUrl = true, render = true } = {}) {
+  mode = m;
+  document.body.classList.toggle('mode-images', m === 'images');
+  document.body.classList.toggle('mode-files', m === 'files');
+  if (render) refreshLayout();
+  if (updateUrl) history.replaceState(history.state, '', buildUrl(currentPath()));
+}
+
+// 面板显隐、空状态、漂浮按钮
+function refreshLayout() {
+  const has = !!current;
+  const both = has && !current.isRoots && current.folders.length && current.images.length;
+  $('folders-section').hidden = !(has && mode === 'files');
+  $('images-section').hidden = !(has && mode === 'images');
+
+  let emptyShown = false;
+  if (has && !current.folders.length && !current.images.length) {
+    $('empty-text').textContent = '这里没有子文件夹，也没有图片';
+    $('empty-up').hidden = current.isRoots;
+    $('empty-clear').hidden = true;
+    emptyShown = true;
+  } else if (has && mode === 'files' && current.folders.length && !folderView.length) {
+    $('empty-text').textContent = '没有匹配「' + filterText.trim() + '」的文件夹';
+    $('empty-up').hidden = false;
+    $('empty-clear').hidden = false;
+    emptyShown = true;
+  }
+  $('empty').hidden = !emptyShown;
+
+  // 返回上级漂浮按钮：所有模式常驻，仅图片全屏时隐藏（全屏内有专属退出按钮）
+  $('fab-up').hidden = !(has && !current.isRoots && !fsActive());
+  $('fab-mode').hidden = !both;
+  $('fab-mode').textContent = mode === 'files' ? '🖼 图片' : '📁 文件';
+  $('fab-mode').title = mode === 'files' ? '切换到图片面板' : '切换到文件面板';
+  syncSortButtons();
+  if (mode === 'images') layoutCells(); // 面板从隐藏变可见后重算容器尺寸
+}
+
+function setFilter(text, { silent = false, refreshUrl = true } = {}) {
+  filterText = text;
+  $('filter').value = text;
+  $('filter-clear').hidden = !text;
+  if (!silent) {
+    if (refreshUrl) history.replaceState(history.state, '', buildUrl(currentPath()));
+    applyFolderView();
+    refreshLayout();
+  }
+}
+
+$('filter').addEventListener('input', (e) => {
+  filterText = e.target.value;
+  $('filter-clear').hidden = !filterText;
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(() => {
+    history.replaceState(history.state, '', buildUrl(currentPath()));
+    applyFolderView();
+    refreshLayout();
+  }, 120);
+});
+$('filter').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') e.target.blur();
+  e.stopPropagation(); // 输入时不触发全局快捷键（Backspace 返回上级等）
+});
+$('filter-clear').addEventListener('click', () => {
+  setFilter('');
+  $('filter').focus();
+});
+$('empty-clear').addEventListener('click', () => setFilter(''));
+
+document.querySelectorAll('#folder-sort button').forEach((b) => {
+  b.addEventListener('click', () => {
+    folderSort = b.dataset.sort;
+    applyFolderView();
+    syncSortButtons();
+    history.replaceState(history.state, '', buildUrl(currentPath()));
+  });
+});
+document.querySelectorAll('#img-sort button').forEach((b) => {
+  b.addEventListener('click', () => {
+    imageSort = b.dataset.sort;
+    applyImageView();
+    syncSortButtons();
+    history.replaceState(history.state, '', buildUrl(currentPath()));
+  });
+});
+
+$('fab-mode').addEventListener('click', () => setMode(mode === 'files' ? 'images' : 'files'));
+
+/* ---------------- 渲染 ---------------- */
+
+function crumb(item) {
+  const b = document.createElement('button');
+  b.className = 'crumb' + (item.active ? ' active' : '');
+  b.textContent = item.name;
+  if (item.title) b.title = item.title;
+  if (item.onClick) b.addEventListener('click', item.onClick);
+  else b.disabled = true;
+  return b;
+}
+
+function renderBreadcrumb(items) {
+  const bc = $('breadcrumb');
+  bc.innerHTML = '';
+  items.forEach((it, i) => {
+    if (i > 0) bc.appendChild(Object.assign(document.createElement('span'), { className: 'crumb-sep', textContent: '/' }));
+    bc.appendChild(crumb(it));
+  });
+}
+
+const fmtTime = (ms) => {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+};
+
+function renderFolderGrid(folders, icon) {
+  const grid = $('folder-grid');
+  grid.innerHTML = '';
+  const showTime = folderSort !== 'name';
+  for (const f of folders) {
+    const card = document.createElement('button');
+    card.className = 'card';
+    const ic = document.createElement('span');
+    ic.className = 'icon';
+    ic.textContent = f.offlineNode ? '📴' : (f.netMember ? '🌐' : icon);
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = f.netMember ? f.name : f.name;
+    name.title = f.netMember ? (f.name + ' · ' + f.sub) : f.name;
+    meta.appendChild(name);
+    if (f.sub) {
+      const sub = document.createElement('span');
+      sub.className = 'sub';
+      sub.textContent = f.sub;
+      sub.title = f.sub;
+      meta.appendChild(sub);
+    } else if (showTime && f.mtime) {
+      const time = document.createElement('span');
+      time.className = 'time';
+      time.textContent = fmtTime(f.mtime);
+      time.title = '修改时间（后台加载，稍后显示）';
+      meta.appendChild(time);
+    }
+    card.append(ic, meta);
+    card.addEventListener('click', () => {
+      if (f.netMember) loadRemote(f.netMember.id, '');
+      else if (current && current.remote) loadRemote(current.remote.node, f.path); // 远程视图内的文件夹仍属于对方
+      else load(f.path);
+    });
+    grid.appendChild(card);
+  }
+}
+
+/* 等比适配：把图片缩放到 宽度≤可视宽 且 高度≤可视高（宽图宽度顶满、高度等比缩短） */
+function fitShot(im, W, H) {
+  const nw = im.naturalWidth, nh = im.naturalHeight;
+  if (!nw || !nh || W <= 0 || H <= 0) return;
+  const k = Math.min(W / nw, H / nh);
+  im.style.width = Math.max(1, Math.round(nw * k)) + 'px';
+  im.style.height = Math.max(1, Math.round(nh * k)) + 'px';
+}
+/* 固定容器尺寸：每个 .shot 都是一整页（可视区宽×高），与图片是否加载无关；
+   图片再按等比 contain 放进各自容器。窄图容器同样占满页宽，不再出现窄尾页和小盒子 */
+function layoutCells() {
+  const W = strip.clientWidth - 20; // 减去 .strip 左右 padding
+  const H = strip.clientHeight - 20;
+  if (W <= 0 || H <= 0) return;
+  for (const fig of zoomer.children) {
+    fig.style.width = W + 'px';
+    fig.style.height = H + 'px';
+    const im = fig.querySelector('img');
+    if (im) fitShot(im, W, H);
+  }
+}
+// 窗口缩放、全屏切换、面板显隐导致尺寸变化时重排所有容器
+let fitRaf = 0;
+new ResizeObserver(() => {
+  cancelAnimationFrame(fitRaf);
+  fitRaf = requestAnimationFrame(layoutCells);
+}).observe(strip);
+
+function renderStrip(images) {
+  zoomer.innerHTML = '';
+  strip.scrollLeft = 0;
+  resetZoom(); // 进入新层级重置缩放
+  mountedRange = [-1, -1];
+  if (stripObserver) stripObserver.disconnect();
+  let debounce = 0;
+  stripObserver = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      if (en.isIntersecting && en.intersectionRatio >= 0.5) {
+        clearTimeout(debounce);
+        const i = +en.target.dataset.i;
+        debounce = setTimeout(() => { $('img-pos').textContent = (i + 1) + ' / ' + images.length; });
+      }
+    }
+  }, { root: strip, threshold: [0.5] });
+
+  // 只创建占位容器（尺寸固定），图片由窗口化挂载按需放入
+  for (let i = 0; i < images.length; i++) {
+    const fig = document.createElement('figure');
+    fig.className = 'shot';
+    fig.title = images[i].name + (images[i].mtime ? ' · ' + fmtTime(images[i].mtime) : '');
+    fig.dataset.i = i;
+    const cap = document.createElement('figcaption');
+    cap.textContent = images[i].name;
+    fig.appendChild(cap);
+    zoomer.appendChild(fig);
+    stripObserver.observe(fig);
+  }
+
+  $('img-count').textContent = images.length + ' 张';
+  $('img-pos').textContent = images.length ? '1 / ' + images.length : '';
+  exitJumpInput(); // 重置跳页输入状态
+  layoutCells(); // 容器立即取到整页尺寸，不等图片加载
+  updateMounted(true); // 挂载当前页附近的图片
+}
+
+/* ---------------- 图片窗口化挂载 ----------------
+   只保留当前页前后各 JUMP_WINDOW 张 <img>，其余为空占位容器；
+   容器尺寸固定，挂载/卸载不引起布局抖动。长会话浏览大量图片时，
+   同时驻留内存的解码位图被限制在很小的数量，避免卡顿与闪退。 */
+const JUMP_WINDOW = 2;
+let mountedRange = [-1, -1];
+
+function mountImg(fig, i) {
+  const info = imageView[i];
+  if (!info) return;
+  const im = document.createElement('img');
+  im.alt = info.name;
+  im.loading = 'lazy';
+  im.decoding = 'async';
+  im.draggable = false;
+  im.addEventListener('load', () => fitShot(im, fig.clientWidth, fig.clientHeight));
+  im.src = imageUrl(info.path);
+  fig.insertBefore(im, fig.firstChild); // 位于 figcaption 之前
+}
+
+function updateMounted(force = false) {
+  const n = imageView.length;
+  if (!n) { mountedRange = [-1, -1]; return; }
+  const cur = nearestShotIndex();
+  const lo = Math.max(0, cur - JUMP_WINDOW);
+  const hi = Math.min(n - 1, cur + JUMP_WINDOW);
+  if (!force && lo === mountedRange[0] && hi === mountedRange[1]) return;
+  mountedRange = [lo, hi];
+  const figs = shotEls();
+  for (let i = 0; i < figs.length; i++) {
+    const im = figs[i].querySelector('img');
+    if (i >= lo && i <= hi) {
+      if (!im) mountImg(figs[i], i);
+    } else if (im) {
+      im.remove(); // 卸载远处图片，释放解码内存
+    }
+  }
+}
+
+// 滚动时节流地移动挂载窗口
+let mountRaf = 0;
+strip.addEventListener('scroll', () => {
+  if (mountRaf) return;
+  mountRaf = requestAnimationFrame(() => { mountRaf = 0; updateMounted(); });
+});
+
+/* ---------------- 跳页：点击页码指示器输入页码直接跳转 ---------------- */
+
+function exitJumpInput() {
+  $('jump-input').hidden = true;
+  $('img-pos').hidden = false;
+}
+$('img-pos').addEventListener('click', () => {
+  if (!imageView.length) return;
+  $('img-pos').hidden = true;
+  const input = $('jump-input');
+  input.hidden = false;
+  input.value = String(nearestShotIndex() + 1); // 预填当前页
+  input.focus();
+  input.select();
+});
+$('img-pos').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); $('img-pos').click(); }
+});
+$('jump-input').addEventListener('keydown', (e) => {
+  e.stopPropagation(); // 输入时不触发全局快捷键
+  if (e.key === 'Enter') {
+    const n = parseInt($('jump-input').value, 10);
+    if (Number.isFinite(n) && imageView.length) {
+      stepTo(Math.max(0, Math.min(imageView.length - 1, n - 1))); // 钳制到有效范围后跳转
+    }
+    exitJumpInput();
+  } else if (e.key === 'Escape') {
+    exitJumpInput();
+  }
+});
+$('jump-input').addEventListener('blur', exitJumpInput);
+
+/* ---------------- 面板交互（手动浏览，不自动翻页） ----------------
+   划动手势（常态）：速度低于 FLING_THRESHOLD 的慢划一次只翻一张；超过阈值的快甩
+   自由滑行，停下后吸附最近一张。
+   缩放（仅全屏，双指捏合 / Ctrl+滚轮，0.5x–5x，原点钉在当前图片中心）：
+   放大后单指拖拽为平移（跟手 1:1，水平/垂直轴锁定互不干扰）；
+   翻页阈值随缩放增大而降低（图片宽度的 25%/zoom，下限 6%），达到即翻到下一页正中心，
+   未达到则只回弹到图片边界（边界内保持偏移，可自由观看细节）。 */
+const FLING_THRESHOLD = 2.5; // 快甩阈值 px/ms，想更灵敏就调小
+const ZOOM_MIN = 0.5, ZOOM_MAX = 5;
+
+let zoom = 1;   // 当前缩放比例
+let panY = 0;   // 缩放态的垂直平移（屏幕像素）
+const shotEls = () => zoomer.children;
+
+const glide = { raf: 0 };
+function stopGlide() { cancelAnimationFrame(glide.raf); }
+
+function clampPanY(v) {
+  const avail = Math.max(0, (zoomer.getBoundingClientRect().height - strip.clientHeight) / 2);
+  return Math.max(-avail, Math.min(avail, v));
+}
+function applyZoom() {
+  zoomer.style.transform = 'translateY(' + panY + 'px) scale(' + zoom + ')';
+  const off = fsActive() && Math.abs(zoom - 1) > 0.01; // 恢复按钮只在全屏且比例≠100% 时出现
+  $('zoom-reset').hidden = !off;
+  if (off) $('zoom-reset').textContent = '⟲ ' + Math.round(zoom * 100) + '%';
+}
+function resetZoom() {
+  zoom = 1; panY = 0;
+  zoomer.style.transformOrigin = '50% 50%';
+  applyZoom();
+}
+$('zoom-reset').addEventListener('click', resetZoom);
+
+// 把缩放原点钉在当前最居中图片的中心（zoomer 内布局像素），
+// 这样缩放围绕当前图片进行，且该图片在缩放中保持视口居中、不会跳页
+function anchorZoomCenter() {
+  const fig = shotEls()[nearestShotIndex()];
+  if (!fig) return null;
+  const p = fig.offsetLeft + fig.offsetWidth / 2;
+  zoomer.style.transformOrigin = p + 'px 50%';
+  return p;
+}
+function centerShot(fig) {
+  strip.scrollLeft = zoomer.offsetLeft + fig.offsetLeft + fig.offsetWidth / 2 - strip.clientWidth / 2;
+}
+
+function shotCenter(el) {
+  const r = el.getBoundingClientRect();
+  return strip.scrollLeft + (r.left + r.width / 2 - strip.getBoundingClientRect().left);
+}
+function zoomOriginX() {
+  const v = zoomer.style.transformOrigin;
+  if (v && v.endsWith('px 50%')) return parseFloat(v);
+  return zoomer.offsetWidth / 2; // '50% 50%'（未锚定时的默认值）
+}
+// O(1)：容器等宽 + transform 反推当前最居中的页码，避免每帧遍历全部元素
+function nearestShotIndex() {
+  const figs = shotEls();
+  const n = figs.length;
+  if (!n) return 0;
+  const step = n > 1 ? figs[1].offsetLeft - figs[0].offsetLeft : figs[0].offsetWidth;
+  if (!step) return 0;
+  const base = figs[0].offsetLeft + figs[0].offsetWidth / 2;
+  const o = zoomOriginX();
+  const c = strip.scrollLeft + strip.clientWidth / 2 - zoomer.offsetLeft; // 视口中心（缩放坐标系）
+  const layoutC = o + (c - o) / zoom; // 反变换回布局坐标
+  return Math.max(0, Math.min(n - 1, Math.round((layoutC - base) / step)));
+}
+// 同时动画滚动位置与垂直平移（panY），缓动到目标；翻页用它归零 panY，回弹用它保持 panY
+function animateTo(targetLeft, targetPanY, duration = 320) {
+  stopGlide();
+  const fromL = strip.scrollLeft;
+  const fromP = panY;
+  const t0 = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / duration);
+    const e = 1 - Math.pow(1 - k, 3); // easeOutCubic
+    strip.scrollLeft = fromL + (targetLeft - fromL) * e;
+    panY = fromP + (targetPanY - fromP) * e;
+    applyZoom();
+    updateMounted(); // 窗口跟随动画移动
+    if (k < 1) glide.raf = requestAnimationFrame(step);
+  };
+  glide.raf = requestAnimationFrame(step);
+}
+function shotCenterTarget(el) {
+  return Math.max(0, Math.min(strip.scrollWidth - strip.clientWidth, shotCenter(el) - strip.clientWidth / 2));
+}
+// 缩放态松手：把当前图片限制在自身边界内——超出边界回弹到边界，边界内保持偏移（不回中）
+function settleZoomedBounds(fig) {
+  const fr = fig.getBoundingClientRect();
+  const sr = strip.getBoundingClientRect();
+  const clientW = strip.clientWidth;
+  const left = fr.left - sr.left; // 图片左边缘相对视口左侧的位置（视觉像素）
+  const w = fr.width;
+  let delta = 0;
+  if (w <= clientW) {
+    delta = (clientW - w) / 2 - left;      // 图比视口窄：只能居中
+  } else if (left > 0) {
+    delta = -left;                          // 左侧越界 → 回弹到左边界
+  } else if (left + w < clientW) {
+    delta = (clientW - w) - left;           // 右侧越界 → 回弹到右边界
+  } else {
+    return;                                 // 边界内：保持当前偏移，自由观看细节
+  }
+  animateTo(Math.max(0, Math.min(strip.scrollWidth - clientW, strip.scrollLeft + delta)), panY, 240);
+}
+function stepTo(i) {
+  const shots = shotEls();
+  if (!shots.length) return;
+  // 翻页：下一页水平居中，垂直偏移（panY）同时归零 → 翻到下一页正中心
+  animateTo(shotCenterTarget(shots[Math.max(0, Math.min(shots.length - 1, i))]), 0);
+}
+const stepImage = (dir) => stepTo(nearestShotIndex() + dir);
+
+// 快甩：按初速度自由滑行，摩擦减速到很慢后吸附最近一张
+function freeGlide(v0) { // v0 为内容速度 px/ms
+  stopGlide();
+  let v = v0;
+  let last = performance.now();
+  const step = (t) => {
+    const dt = Math.min(32, t - last); last = t;
+    strip.scrollLeft += v * dt;
+    v *= Math.pow(0.9965, dt); // 摩擦
+    updateMounted(); // 窗口跟随滑行移动
+    const max = strip.scrollWidth - strip.clientWidth;
+    if (Math.abs(v) < 0.05 || (v < 0 && strip.scrollLeft <= 0) || (v > 0 && strip.scrollLeft >= max)) {
+      animateTo(shotCenterTarget(shotEls()[nearestShotIndex()]), 0, 220);
+      return;
+    }
+    glide.raf = requestAnimationFrame(step);
+  };
+  glide.raf = requestAnimationFrame(step);
+}
+
+/* 单指/鼠标拖拽 + 双指捏合 */
+const pointers = new Map(); // 参与手势的指针
+let pinch = null;           // 双指缩放会话
+const gesture = { id: null, startX: 0, startY: 0, startLeft: 0, startPanY: 0, anchor: 0, samples: [], moved: false, axis: null, tapIndex: -1 };
+
+function beginGesture(pid, x, y) {
+  stopGlide(); // 用户接管，终止进行中的滑行动画
+  gesture.id = pid;
+  gesture.startX = x;
+  gesture.startY = y;
+  gesture.startLeft = strip.scrollLeft;
+  gesture.startPanY = panY;
+  gesture.anchor = nearestShotIndex(); // 手势开始时最居中的那张，翻页以它为基准
+  gesture.samples = [{ t: performance.now(), x }];
+  gesture.moved = false;
+  gesture.axis = null; // 轴锁定：首次显著移动时判定主轴，避免横划的竖向抖动混入垂直平移
+}
+function gestureVelocity() { // 最近 120ms 采样算出的手指速度 px/ms
+  const s = gesture.samples;
+  if (s.length < 2 || s[s.length - 1].t <= s[0].t) return 0;
+  return (s[s.length - 1].x - s[0].x) / (s[s.length - 1].t - s[0].t);
+}
+function gestureDir(e) {
+  const dx = e.clientX - gesture.startX;
+  const v = gestureVelocity();
+  return Math.abs(dx) >= 8 ? Math.sign(-dx) : (Math.abs(v) > 0.15 ? Math.sign(-v) : 0);
+}
+
+strip.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'mouse' && e.pointerType !== 'touch') return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { strip.setPointerCapture(e.pointerId); } catch { /* 捕获失败也能工作 */ }
+  const shot = e.target && e.target.closest ? e.target.closest('.shot') : null;
+  gesture.tapIndex = shot ? +shot.dataset.i : -1;
+  if (pointers.size === 2 && fsActive()) {
+    // 第二根手指落下：进入捏合缩放，取消单指手势（仅全屏模式下生效）
+    stopGlide();
+    gesture.id = null;
+    const [a, b] = [...pointers.values()];
+    pinch = {
+      baseDist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+      baseZoom: zoom,
+      baseMidX: (a.x + b.x) / 2,
+      baseMidY: (a.y + b.y) / 2,
+      anchored: false, // 首次 move 时把原点钉到当前图片并居中
+    };
+  } else if (pointers.size === 1) {
+    beginGesture(e.pointerId, e.clientX, e.clientY);
+  }
+});
+
+strip.addEventListener('pointermove', (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (pinch && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    if (!pinch.anchored) {
+      // 缩放原点 = 当前图片中心，并把当前图片滚到视口中央，缩放即围绕它进行
+      pinch.anchored = true;
+      const fig = shotEls()[nearestShotIndex()];
+      if (fig) centerShot(fig);
+      anchorZoomCenter();
+      pinch.startLeft = strip.scrollLeft;
+      pinch.startPanY = panY;
+    }
+    zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN,
+      pinch.baseZoom * Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) / pinch.baseDist));
+    const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+    // 双指中点的位移转为平移：水平走滚动、垂直走 panY（滚动像素即视觉像素，1:1 跟手）
+    strip.scrollLeft = pinch.startLeft - (midX - pinch.baseMidX);
+    panY = clampPanY(pinch.startPanY - (midY - pinch.baseMidY));
+    applyZoom();
+    return;
+  }
+
+  if (e.pointerId !== gesture.id) return;
+  const dx = e.clientX - gesture.startX;
+  const dy = e.clientY - gesture.startY;
+  if (!gesture.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+    gesture.moved = true;
+    gesture.axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y'; // 轴锁定
+  }
+  if (zoom > 1.01) {
+    // 缩放态：水平/垂直按锁定的轴独立平移（滚动像素=视觉像素，1:1 跟手）
+    if (gesture.axis !== 'y') strip.scrollLeft = gesture.startLeft - dx;
+    if (gesture.axis !== 'x') panY = clampPanY(gesture.startPanY - dy);
+  } else {
+    strip.scrollLeft = gesture.startLeft - dx; // 跟手
+  }
+  const now = performance.now();
+  gesture.samples.push({ t: now, x: e.clientX });
+  while (gesture.samples.length > 2 && now - gesture.samples[0].t > 120) gesture.samples.shift(); // 只保留最近 120ms 采样
+});
+
+function gestureEnd(e, canceled) {
+  if (e.pointerId !== gesture.id) return;
+  gesture.id = null;
+  if (canceled || !shotEls().length) return;
+  if (!gesture.moved) {
+    if (gesture.tapIndex >= 0) openLightbox(gesture.tapIndex); // 轻点打开大图
+    return;
+  }
+  if (zoom > 1.01) {
+    // 放大态：阈值随缩放增大而降低 = 图片宽度的 25%/zoom（下限 6%），
+    // 放大越多越容易翻页；不足阈值 → 只回弹到图片边界，边界内保持偏移（可自由观看细节）
+    const fig = shotEls()[Math.min(gesture.anchor, shotEls().length - 1)];
+    if (!fig) return;
+    const figW = fig.getBoundingClientRect().width || 1;
+    const frac = Math.min(0.25, Math.max(0.06, 0.25 / zoom));
+    if (Math.abs(e.clientX - gesture.startX) > frac * figW) {
+      stepTo(gesture.anchor + gestureDir(e));
+    } else {
+      settleZoomedBounds(fig);
+    }
+    return;
+  }
+  const v = gestureVelocity(); // 手指速度 px/ms
+  if (Math.abs(v) >= FLING_THRESHOLD) {
+    freeGlide(-v); // 内容移动方向与手指相反
+  } else {
+    stepTo(gesture.anchor + gestureDir(e)); // 慢划：只翻一张
+  }
+}
+
+function onPointerEnd(e, canceled) {
+  pointers.delete(e.pointerId);
+  if (pinch) {
+    if (pointers.size < 2) {
+      pinch = null;
+      if (pointers.size === 1) {
+        // 捏合后剩余的手指重新作为单指手势起点，避免抬指误触发翻页/轻点
+        const [pid] = pointers.keys();
+        const p = pointers.get(pid);
+        beginGesture(pid, p.x, p.y);
+        gesture.moved = true;
+      }
+    }
+    return;
+  }
+  gestureEnd(e, canceled);
+}
+strip.addEventListener('pointerup', (e) => onPointerEnd(e, false));
+strip.addEventListener('pointercancel', (e) => onPointerEnd(e, true));
+
+// 滚轮：Ctrl+滚轮 缩放（仅全屏，原点钉在当前图片中心并保持居中）；普通滚轮横向滚动
+strip.addEventListener('wheel', (e) => {
+  stopGlide();
+  if (e.ctrlKey) {
+    if (!fsActive()) return; // 非全屏放行给浏览器缩放
+    e.preventDefault();
+    anchorZoomCenter();
+    const fig = shotEls()[nearestShotIndex()];
+    if (fig) centerShot(fig);
+    zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * Math.exp(-e.deltaY * 0.0022)));
+    if (fig) centerShot(fig);
+    applyZoom();
+    return;
+  }
+  const d = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  if (d !== 0) {
+    strip.scrollLeft += d;
+    e.preventDefault();
+  }
+}, { passive: false });
+
+const pageLeft = () => stepImage(-1);
+const pageRight = () => stepImage(1);
+$('edge-left').addEventListener('click', pageLeft);
+$('edge-right').addEventListener('click', pageRight);
+
+function goUp() {
+  if (!current) return load(null);
+  if (current.isRoots) return;
+  if (current.remote) return current.parent ? loadRemote(current.remote.node, current.parent) : load(null);
+  load(current.parent || null);
+}
+$('empty-up').addEventListener('click', goUp);
+$('fab-up').addEventListener('click', goUp);
+$('error-home').addEventListener('click', () => load(null));
+
+/* ---------------- 全屏（含不支持全屏 API 环境的伪全屏兜底） ---------------- */
+
+function fsActive() {
+  return document.fullscreenElement === stripWrap || stripWrap.classList.contains('pseudo-fs');
+}
+function enterFs() {
+  if (stripWrap.requestFullscreen) {
+    // iPhone Safari 等不支持元素全屏 API 的环境回退为伪全屏
+    stripWrap.requestFullscreen().catch(() => { stripWrap.classList.add('pseudo-fs'); syncFsUi(); });
+  } else {
+    stripWrap.classList.add('pseudo-fs');
+    syncFsUi();
+  }
+}
+function exitFs() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  stripWrap.classList.remove('pseudo-fs');
+  syncFsUi();
+}
+function syncFsUi() {
+  $('fs-btn').textContent = fsActive() ? '⤢ 退出全屏' : '⛶ 全屏';
+  resetZoom(); // 进/出全屏都恢复 100%，避免非全屏残留缩放状态
+  refreshLayout();
+}
+$('fs-btn').addEventListener('click', () => (fsActive() ? exitFs() : enterFs()));
+$('exit-fs').addEventListener('click', exitFs);
+document.addEventListener('fullscreenchange', syncFsUi);
+
+/* ---------------- 大图预览 ---------------- */
+
+function updateLightbox() {
+  const imgs = imageView;
+  if (!imgs.length) return;
+  lbIndex = (lbIndex + imgs.length) % imgs.length;
+  $('lb-img').src = imageUrl(imgs[lbIndex].path);
+  $('lb-name').textContent = imgs[lbIndex].name;
+  $('lb-index').textContent = (lbIndex + 1) + ' / ' + imgs.length;
+}
+function openLightbox(i) { lbIndex = i; updateLightbox(); $('lightbox').hidden = false; }
+function closeLightbox() { $('lightbox').hidden = true; }
+$('lb-close').addEventListener('click', closeLightbox);
+$('lb-prev').addEventListener('click', () => { lbIndex--; updateLightbox(); });
+$('lb-next').addEventListener('click', () => { lbIndex++; updateLightbox(); });
+$('lightbox').addEventListener('click', (e) => { if (e.target === $('lightbox') || e.target.classList.contains('lb-stage')) closeLightbox(); });
+
+/* ---------------- 键盘 & 历史 ---------------- */
+
+window.addEventListener('keydown', (e) => {
+  const lbOpen = !$('lightbox').hidden;
+  if (e.key === 'Escape') {
+    if (!$('net-panel').hidden) return closeNetPanel();
+    if (lbOpen) return closeLightbox();
+    if (stripWrap.classList.contains('pseudo-fs')) return exitFs(); // 伪全屏没有浏览器自带的 Esc 退出
+  }
+  if (!$('net-panel').hidden) return; // 面板打开时不响应浏览快捷键
+  const tag = (e.target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 输入框内不拦截按键
+  if (lbOpen) {
+    if (e.key === 'ArrowLeft') { lbIndex--; updateLightbox(); }
+    else if (e.key === 'ArrowRight') { lbIndex++; updateLightbox(); }
+    return;
+  }
+  if (e.key === 'ArrowLeft' && mode === 'images') { e.preventDefault(); pageLeft(); }
+  else if (e.key === 'ArrowRight' && mode === 'images') { e.preventDefault(); pageRight(); }
+  else if (e.key === 'Backspace' || (e.altKey && e.key === 'ArrowLeft')) { e.preventDefault(); goUp(); }
+  else if (e.key === '/' && mode === 'files') { e.preventDefault(); $('filter').focus(); }
+});
+
+window.addEventListener('popstate', () => {
+  const p = new URLSearchParams(location.search);
+  applyParamsSilently(p);
+  const node = p.get('node');
+  if (node) loadRemote(node, p.get('dir') || '', false, p.get('view'));
+  else load(p.get('dir') || null, false, p.get('view'));
+});
+
+function applyParamsSilently(p) {
+  filterText = p.get('q') || '';
+  $('filter').value = filterText;
+  $('filter-clear').hidden = !filterText;
+  folderSort = p.get('fsort') || 'name';
+  imageSort = p.get('isort') || 'name';
+  syncSortButtons();
+}
+
+/* ---------------- 入网互联：状态轮询 + 设置面板 ---------------- */
+
+function updateNetChip() {
+  const s = netState;
+  const n = s ? s.members.length : 0;
+  const online = !!(s && (s.joined || s.hub || n > 0));
+  const el = $('net-chip');
+  el.classList.toggle('on', online);
+  $('net-chip-text').textContent = online ? '🌐 在网 · ' + (n + 1) + ' 节点' : '🌐 网络';
+}
+
+async function refreshNetState() {
+  try {
+    netState = await api('/api/net/state');
+  } catch { netState = null; }
+  updateNetChip();
+  if (!$('net-panel').hidden) {
+    renderNetPanel();
+    fetch('/api/net/discover').then((r) => r.json()).then((d) => {
+      if (!$('net-panel').hidden) renderDiscovered(d.discovered || []);
+    }).catch(() => {});
+  }
+  if (current && current.isRoots) rebuildRootsView();
+}
+
+function copyText(text) {
+  const done = () => {};
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text));
+  } else fallbackCopy(text);
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch { /* 忽略 */ }
+  ta.remove();
+}
+
+function netPost(path, body) {
+  return fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  }).then((r) => r.json().catch(() => ({})));
+}
+
+function renderDiscovered(list) {
+  const box = $('np-discovered');
+  box.innerHTML = '';
+  const items = (list || []).filter((d) => d.id !== (netState && netState.me.id));
+  $('np-discovered-empty').hidden = items.length > 0;
+  for (const d of items) {
+    const item = document.createElement('div');
+    item.className = 'np-item';
+    const info = document.createElement('span');
+    info.className = 'grow';
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = d.name || ('节点 ' + d.id.slice(0, 8));
+    const ad = document.createElement('span');
+    ad.className = 'addr';
+    ad.textContent = '  ' + d.addr;
+    info.append(nm, ad);
+    const btn = document.createElement('button');
+    btn.className = 'mini';
+    btn.textContent = d.known ? '✓ 已在网络中' : '⚡ 一键入网';
+    btn.disabled = !!d.known;
+    if (!d.known) btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = '连接中…';
+      netPost('/api/net/join', { addrs: [d.addr] }).then((r) => {
+        const res = (r.results || [])[0];
+        $('np-msg').textContent = res && res.ok ? '✅ 已接入 ' + d.addr : '❌ ' + d.addr + '：' + ((res && res.error) || '失败');
+        setTimeout(refreshNetState, 600);
+      }).catch((e) => { $('np-msg').textContent = '入网失败：' + e.message; });
+    });
+    item.append(info, btn);
+    box.appendChild(item);
+  }
+}
+
+function renderNetPanel() {
+  const s = netState;
+  if (!s) return;
+  $('np-name').value = s.me.name || '';
+  $('np-id').value = s.me.id;
+  $('np-pub').value = s.me.publicKey;
+  $('np-secret').value = s.me.secret || '';
+  $('np-secret').disabled = !s.me.secret;
+  $('np-share').checked = !!s.share;
+  $('np-cacheserve').checked = !!s.cacheServe;
+  $('np-conc').value = s.concurrency;
+
+  const ups = $('np-uplinks');
+  ups.innerHTML = '';
+  for (const u of s.uplinks || []) {
+    const item = document.createElement('div');
+    item.className = 'np-item';
+    const st = document.createElement('span');
+    st.className = 'st ' + (u.status === 'connected' ? 'ok' : 'bad');
+    st.textContent = u.status === 'connected' ? '已连接' : (u.status === 'connecting' ? '连接中…' : '重连中');
+    const addr = document.createElement('span');
+    addr.className = 'grow addr';
+    addr.textContent = u.addr;
+    item.append(addr, st);
+    ups.appendChild(item);
+  }
+  $('np-leave-row').hidden = !(s.uplinks && s.uplinks.length);
+
+  const list = $('np-members');
+  list.innerHTML = '';
+  const members = s.members || [];
+  for (const m of members) {
+    const item = document.createElement('div');
+    item.className = 'np-item';
+    const info = document.createElement('span');
+    info.className = 'grow';
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = m.name || ('节点 ' + m.id.slice(0, 8));
+    const ad = document.createElement('span');
+    ad.className = 'addr';
+    ad.textContent = '  ' + (m.addr || m.id) + (m.direct ? ' · 直连' : ' · 中继');
+    info.append(nm, ad);
+    const btn = document.createElement('button');
+    btn.className = 'mini';
+    btn.textContent = '🖼 浏览图库';
+    btn.addEventListener('click', () => { closeNetPanel(); loadRemote(m.id, ''); });
+    item.append(info, btn);
+    list.appendChild(item);
+  }
+  $('np-members-empty').hidden = members.length > 0;
+  const myAddrEl = $('np-my-addr');
+  if (myAddrEl && s.uplinks && s.uplinks.length === 0 && !s.hub) {
+    // 显示本机对外的提示地址（从成员视角拿不到时退回 location）
+    myAddrEl.textContent = location.host;
+  }
+}
+
+function openNetPanel() {
+  $('net-panel').hidden = false;
+  refreshNetState();
+}
+function closeNetPanel() { $('net-panel').hidden = true; }
+
+$('net-chip').addEventListener('click', () => ($('net-panel').hidden ? openNetPanel() : closeNetPanel()));
+$('np-close').addEventListener('click', closeNetPanel);
+$('np-backdrop').addEventListener('click', closeNetPanel);
+$('np-id-copy').addEventListener('click', () => copyText($('np-id').value));
+$('np-pub-copy').addEventListener('click', () => copyText($('np-pub').value));
+$('np-secret-copy').addEventListener('click', () => copyText($('np-secret').value));
+$('np-secret-eye').addEventListener('click', () => {
+  const inp = $('np-secret');
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  $('np-secret-eye').textContent = show ? '隐藏' : '显示';
+});
+$('np-name-save').addEventListener('click', () => {
+  const name = $('np-name').value.trim();
+  if (!name) return;
+  netPost('/api/net/settings', { name }).then(() => refreshNetState());
+});
+$('np-share').addEventListener('change', (e) => {
+  netPost('/api/net/settings', { share: e.target.checked });
+});
+$('np-cacheserve').addEventListener('change', (e) => {
+  netPost('/api/net/settings', { cacheServe: e.target.checked });
+});
+$('np-conc').addEventListener('change', (e) => {
+  const n = Math.max(1, Math.min(16, parseInt(e.target.value, 10) || 5));
+  e.target.value = n;
+  netPost('/api/net/settings', { concurrency: n });
+});
+$('np-join').addEventListener('click', () => {
+  const raw = $('np-addr').value.trim();
+  if (!raw) return;
+  const addrs = raw.split(/[,，;；\s]+/).filter(Boolean);
+  netPost('/api/net/join', { addrs }).then((r) => {
+    const lines = (r.results || []).map((x) => (x.ok ? '✅ ' + x.addr + (x.node ? ' → ' + x.node : '') : '❌ ' + x.addr + '：' + x.error));
+    $('np-msg').textContent = lines.join('\n') || '没有有效地址';
+    if (lines.some((l) => l[0] === '✅')) $('np-addr').value = '';
+    setTimeout(refreshNetState, 600);
+  }).catch((e) => { $('np-msg').textContent = '入网失败：' + e.message; });
+});
+$('np-leave').addEventListener('click', () => {
+  netPost('/api/net/leave', {}).then(() => { $('np-msg').textContent = '已退出网络'; refreshNetState(); });
+});
+$('np-addr').addEventListener('keydown', (e) => {
+  e.stopPropagation(); // 输入时不触发全局快捷键
+  if (e.key === 'Enter') $('np-join').click();
+});
+
+// 周期刷新网络状态（本机接口，开销极小）
+setInterval(refreshNetState, 5000);
+refreshNetState();
+
+const initParams = new URLSearchParams(location.search);
+applyParamsSilently(initParams);
+if (initParams.get('node')) loadRemote(initParams.get('node'), initParams.get('dir') || '', false, initParams.get('view'));
+else load(initParams.get('dir') || null, false, initParams.get('view'));
+</script>
+</body>
+</html>
